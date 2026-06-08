@@ -27,6 +27,7 @@ import {
   ApiBody,
   ApiConsumes,
   ApiOperation,
+  ApiParam,
   ApiQuery,
 } from '@nestjs/swagger';
 import AuthGuard from 'src/app/middlewares/auth.guard';
@@ -301,7 +302,7 @@ export class UserController {
   @ApiOperation({
     summary: 'Get single user by id',
   })
-  @ApiQuery({
+  @ApiParam({
     name: 'id',
     required: true,
     type: String,
@@ -347,7 +348,7 @@ export class UserController {
   })
   @ApiBearerAuth('access-token')
   @UseGuards(AuthGuard('admin'))
-  @ApiQuery({
+  @ApiParam({
     name: 'id',
     required: true,
     type: String,
