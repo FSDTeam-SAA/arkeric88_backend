@@ -1,0 +1,1816 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ArronWH — Payment Demo</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@700;800&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://js.stripe.com/v3/"></script>
+    <style>
+      :root {
+        --primary: #f5a623;
+        --primary-dark: #d48c0f;
+        --primary-light: #fff8ed;
+        --green: #16a34a;
+        --green-light: #f0fdf4;
+        --dark: #0f0f0f;
+        --gray-900: #111827;
+        --gray-700: #374151;
+        --gray-500: #6b7280;
+        --gray-300: #d1d5db;
+        --gray-100: #f9fafb;
+        --white: #ffffff;
+        --danger: #dc2626;
+        --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+        --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.08);
+        --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.12);
+        --radius: 16px;
+        --radius-sm: 10px;
+      }
+      *,
+      *::before,
+      *::after {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: 'DM Sans', sans-serif;
+        background: #f5f5f0;
+        color: var(--gray-900);
+        line-height: 1.6;
+        min-height: 100vh;
+      }
+
+      /* NAV */
+      .navbar {
+        background: var(--dark);
+        padding: 18px 48px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        position: sticky;
+        top: 0;
+        z-index: 200;
+      }
+      .logo {
+        font-family: 'Playfair Display', serif;
+        font-size: 24px;
+        font-weight: 800;
+        color: var(--white);
+        letter-spacing: -0.5px;
+      }
+      .logo span {
+        color: var(--primary);
+      }
+      .nav-badge {
+        background: rgba(245, 166, 35, 0.15);
+        color: var(--primary);
+        border: 1px solid rgba(245, 166, 35, 0.3);
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+      }
+
+      /* CONFIG BAR */
+      .config-bar {
+        background: var(--dark);
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+        padding: 14px 48px;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        flex-wrap: wrap;
+      }
+      .config-bar label {
+        color: rgba(255, 255, 255, 0.5);
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .config-bar input {
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: var(--white);
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-family: 'DM Sans', monospace;
+        outline: none;
+        transition: border-color 0.2s;
+      }
+      .config-bar input:focus {
+        border-color: var(--primary);
+      }
+      .config-bar input::placeholder {
+        color: rgba(255, 255, 255, 0.25);
+      }
+      #apiUrl {
+        width: 280px;
+      }
+      #pkInput {
+        width: 320px;
+      }
+      .config-tag {
+        margin-left: auto;
+        background: rgba(22, 163, 74, 0.15);
+        color: #4ade80;
+        border: 1px solid rgba(22, 163, 74, 0.25);
+        padding: 6px 14px;
+        border-radius: 8px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 1px;
+      }
+
+      /* PROGRESS */
+      .progress-wrap {
+        background: var(--white);
+        padding: 20px 48px;
+        border-bottom: 1px solid var(--gray-300);
+        box-shadow: var(--shadow-sm);
+      }
+      .progress-bar {
+        max-width: 860px;
+        margin: 0 auto;
+        display: flex;
+        justify-content: space-between;
+        position: relative;
+      }
+      .progress-bar::before {
+        content: '';
+        position: absolute;
+        top: 18px;
+        left: 20px;
+        right: 20px;
+        height: 2px;
+        background: var(--gray-300);
+      }
+      .prog-fill {
+        position: absolute;
+        top: 18px;
+        left: 20px;
+        height: 2px;
+        background: linear-gradient(90deg, var(--primary-dark), var(--primary));
+        transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        z-index: 1;
+      }
+      .step-dot {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        z-index: 2;
+      }
+      .step-circle {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: var(--white);
+        border: 2px solid var(--gray-300);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 13px;
+        color: var(--gray-500);
+        transition: all 0.3s;
+      }
+      .step-circle.active {
+        border-color: var(--primary);
+        background: var(--primary);
+        color: var(--white);
+      }
+      .step-circle.done {
+        border-color: var(--green);
+        background: var(--green);
+        color: var(--white);
+      }
+      .step-label {
+        margin-top: 6px;
+        font-size: 10px;
+        color: var(--gray-500);
+        font-weight: 600;
+        white-space: nowrap;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .step-label.active {
+        color: var(--primary);
+      }
+
+      /* MAIN */
+      .main {
+        max-width: 800px;
+        margin: 36px auto;
+        padding: 0 20px 80px;
+      }
+      .step {
+        display: none;
+        animation: fadeUp 0.35s ease;
+      }
+      .step.on {
+        display: block;
+      }
+      @keyframes fadeUp {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      /* CARD */
+      .card {
+        background: var(--white);
+        border-radius: var(--radius);
+        padding: 40px;
+        box-shadow: var(--shadow-md);
+        border: 1px solid rgba(0, 0, 0, 0.04);
+      }
+      .card-header {
+        margin-bottom: 32px;
+      }
+      .card-header h2 {
+        font-family: 'Playfair Display', serif;
+        font-size: 26px;
+        font-weight: 700;
+        color: var(--dark);
+        margin-bottom: 6px;
+        letter-spacing: -0.5px;
+      }
+      .card-header p {
+        color: var(--gray-500);
+        font-size: 14px;
+      }
+
+      /* QUIZ */
+      .quiz-block {
+        margin-bottom: 28px;
+      }
+      .quiz-q {
+        font-weight: 600;
+        font-size: 14px;
+        margin-bottom: 10px;
+        color: var(--gray-700);
+      }
+      .quiz-opts {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .quiz-opt {
+        padding: 12px 16px;
+        border: 2px solid var(--gray-300);
+        border-radius: var(--radius-sm);
+        text-align: center;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 500;
+        transition: all 0.18s;
+        user-select: none;
+      }
+      .quiz-opt:hover {
+        border-color: var(--primary);
+        background: var(--primary-light);
+      }
+      .quiz-opt.sel {
+        border-color: var(--primary);
+        background: var(--primary);
+        color: var(--white);
+      }
+
+      /* SELECTION GRID */
+      .sel-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 14px;
+      }
+      .sel-card {
+        border: 2px solid var(--gray-300);
+        border-radius: var(--radius);
+        padding: 20px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.22s;
+        position: relative;
+      }
+      .sel-card:hover {
+        border-color: var(--primary);
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
+      }
+      .sel-card.sel {
+        border-color: var(--primary);
+        background: var(--primary-light);
+      }
+      .sel-card.sel::after {
+        content: '✓';
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: var(--primary);
+        color: var(--white);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .sel-icon {
+        font-size: 44px;
+        margin-bottom: 12px;
+        display: block;
+      }
+      .sel-badges {
+        display: flex;
+        gap: 4px;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+      }
+      .sel-badge {
+        background: var(--green-light);
+        color: var(--green);
+        font-size: 9px;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 20px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .sel-card h4 {
+        font-size: 15px;
+        font-weight: 700;
+        margin-bottom: 4px;
+      }
+      .sel-card .sel-desc {
+        font-size: 12px;
+        color: var(--gray-500);
+        margin-bottom: 10px;
+      }
+      .sel-price {
+        font-size: 20px;
+        font-weight: 800;
+        color: var(--primary);
+      }
+      .sel-price .old {
+        font-size: 13px;
+        color: var(--gray-500);
+        text-decoration: line-through;
+        margin-left: 6px;
+        font-weight: 400;
+      }
+
+      /* FORM */
+      .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+      .form-grid.full {
+        grid-template-columns: 1fr;
+      }
+      .form-field {
+        display: flex;
+        flex-direction: column;
+      }
+      .form-field label {
+        font-weight: 600;
+        font-size: 12px;
+        color: var(--gray-700);
+        margin-bottom: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .form-field input,
+      .form-field select,
+      .form-field textarea {
+        padding: 12px 14px;
+        border: 2px solid var(--gray-300);
+        border-radius: var(--radius-sm);
+        font-size: 14px;
+        font-family: 'DM Sans', sans-serif;
+        transition: border-color 0.18s;
+        outline: none;
+        background: var(--white);
+        color: var(--gray-900);
+      }
+      .form-field input:focus,
+      .form-field select:focus,
+      .form-field textarea:focus {
+        border-color: var(--primary);
+      }
+
+      /* PRICE SUMMARY */
+      .price-box {
+        background: linear-gradient(135deg, var(--dark) 0%, #1a1a1a 100%);
+        border-radius: var(--radius);
+        padding: 24px 28px;
+        color: var(--white);
+        margin-bottom: 24px;
+      }
+      .price-box h4 {
+        font-size: 11px;
+        font-weight: 700;
+        color: rgba(255, 255, 255, 0.4);
+        margin-bottom: 14px;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+      }
+      .price-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+        font-size: 14px;
+        color: rgba(255, 255, 255, 0.7);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .price-row:last-child {
+        border-bottom: none;
+      }
+      .price-row.total {
+        padding-top: 16px;
+        margin-top: 8px;
+        font-size: 22px;
+        font-weight: 800;
+        color: var(--primary);
+        border-top: 1px solid rgba(255, 255, 255, 0.12);
+        border-bottom: none;
+      }
+
+      /* REVIEW */
+      .review-section {
+        margin-bottom: 24px;
+      }
+      .review-section h3 {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        color: var(--primary);
+        margin-bottom: 10px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid var(--primary-light);
+      }
+      .review-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+        font-size: 14px;
+        border-bottom: 1px solid var(--gray-100);
+      }
+      .review-row .rl {
+        color: var(--gray-500);
+      }
+      .review-row .rv {
+        font-weight: 600;
+      }
+
+      /* STRIPE */
+      .stripe-section {
+        background: var(--gray-100);
+        border-radius: var(--radius);
+        padding: 28px;
+        margin-top: 24px;
+        border: 2px solid var(--gray-300);
+      }
+      .stripe-section h3 {
+        font-size: 17px;
+        font-weight: 700;
+        margin-bottom: 6px;
+      }
+      .stripe-section .sub {
+        font-size: 13px;
+        color: var(--gray-500);
+        margin-bottom: 20px;
+      }
+      #payment-element {
+        min-height: 44px;
+      }
+      #payment-errors {
+        color: var(--danger);
+        font-size: 13px;
+        margin-top: 10px;
+        min-height: 18px;
+      }
+      .stripe-secure {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 14px;
+        font-size: 12px;
+        color: var(--gray-500);
+      }
+
+      /* TEST CARDS */
+      .test-cards {
+        background: var(--green-light);
+        border: 1px solid #bbf7d0;
+        border-radius: var(--radius-sm);
+        padding: 16px 20px;
+        margin-top: 16px;
+      }
+      .test-cards .tc-title {
+        font-weight: 700;
+        font-size: 12px;
+        color: var(--green);
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .test-cards .tc-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+        font-size: 12px;
+      }
+      .tc-item span {
+        color: var(--gray-500);
+      }
+      .tc-item strong {
+        font-family: monospace;
+        color: var(--gray-900);
+      }
+
+      /* BUTTONS */
+      .btn-row {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 32px;
+        align-items: center;
+      }
+      .btn {
+        padding: 13px 28px;
+        border: none;
+        border-radius: 50px;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.22s;
+        font-family: 'DM Sans', sans-serif;
+      }
+      .btn-back {
+        background: var(--gray-100);
+        color: var(--gray-700);
+      }
+      .btn-back:hover {
+        background: var(--gray-300);
+      }
+      .btn-next {
+        background: var(--primary);
+        color: var(--white);
+      }
+      .btn-next:hover {
+        background: var(--primary-dark);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px rgba(245, 166, 35, 0.35);
+      }
+      .btn-pay {
+        background: linear-gradient(135deg, #16a34a, #15803d);
+        color: var(--white);
+        font-size: 15px;
+        padding: 15px 40px;
+        box-shadow: 0 4px 16px rgba(22, 163, 74, 0.3);
+      }
+      .btn-pay:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 24px rgba(22, 163, 74, 0.4);
+      }
+      .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none !important;
+        box-shadow: none !important;
+      }
+
+      /* SUCCESS */
+      .success-wrap {
+        text-align: center;
+        padding: 40px 20px;
+      }
+      .success-icon {
+        width: 88px;
+        height: 88px;
+        border-radius: 50%;
+        background: var(--green);
+        color: var(--white);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 40px;
+        margin: 0 auto 24px;
+        box-shadow: 0 8px 24px rgba(22, 163, 74, 0.3);
+        animation: pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+      @keyframes pop {
+        0% {
+          transform: scale(0);
+        }
+        100% {
+          transform: scale(1);
+        }
+      }
+      .success-wrap h2 {
+        font-family: 'Playfair Display', serif;
+        font-size: 30px;
+        color: var(--green);
+        margin-bottom: 8px;
+      }
+      .success-wrap .sub {
+        color: var(--gray-500);
+        font-size: 15px;
+        margin-bottom: 32px;
+      }
+      .confirm-box {
+        background: var(--gray-100);
+        border-radius: var(--radius);
+        padding: 24px;
+        text-align: left;
+        max-width: 440px;
+        margin: 0 auto;
+        border: 1px solid var(--gray-300);
+      }
+
+      /* LOADER */
+      .loader {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(4px);
+        z-index: 999;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .loader.on {
+        display: flex;
+      }
+      .spinner {
+        width: 44px;
+        height: 44px;
+        border: 3px solid var(--gray-300);
+        border-top-color: var(--primary);
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .loader-msg {
+        font-size: 14px;
+        color: var(--gray-500);
+        font-weight: 500;
+      }
+      .loader-steps {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .loader-step {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--gray-300);
+        transition: background 0.3s;
+      }
+      .loader-step.on {
+        background: var(--primary);
+      }
+
+      /* TOAST */
+      .toast {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 14px 22px;
+        border-radius: var(--radius-sm);
+        font-size: 14px;
+        font-weight: 600;
+        z-index: 1001;
+        transform: translateX(420px);
+        transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        box-shadow: var(--shadow-lg);
+        max-width: 380px;
+      }
+      .toast.show {
+        transform: translateX(0);
+      }
+      .toast.ok {
+        background: var(--green);
+        color: var(--white);
+      }
+      .toast.err {
+        background: var(--danger);
+        color: var(--white);
+      }
+      .toast.info {
+        background: var(--primary);
+        color: var(--white);
+      }
+
+      /* API LOG */
+      .api-log {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: #0d1117;
+        color: #7ee787;
+        font-family: 'SF Mono', 'Fira Code', monospace;
+        font-size: 11px;
+        max-height: 220px;
+        overflow-y: auto;
+        padding: 10px 20px 10px;
+        z-index: 300;
+        transition: max-height 0.3s;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .api-log.hide {
+        max-height: 34px;
+        overflow: hidden;
+      }
+      .log-toggle {
+        position: absolute;
+        top: 6px;
+        right: 16px;
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: #7ee787;
+        padding: 2px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: monospace;
+        font-size: 11px;
+      }
+      .log-entry {
+        padding: 3px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        line-height: 1.5;
+      }
+      .log-ts {
+        color: #484f58;
+        margin-right: 8px;
+      }
+      .log-req {
+        color: #79c0ff;
+      }
+      .log-ok {
+        color: #7ee787;
+      }
+      .log-err {
+        color: #ff7b72;
+      }
+      .log-stripe {
+        color: #e3b341;
+      }
+
+      /* RESPONSIVE */
+      @media (max-width: 700px) {
+        .navbar,
+        .config-bar,
+        .progress-wrap {
+          padding: 14px 20px;
+        }
+        .card {
+          padding: 24px 20px;
+        }
+        .form-grid {
+          grid-template-columns: 1fr;
+        }
+        .quiz-opts {
+          grid-template-columns: 1fr;
+        }
+        .sel-grid {
+          grid-template-columns: 1fr;
+        }
+        #apiUrl,
+        #pkInput {
+          width: 200px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- LOADER -->
+    <div class="loader" id="loader">
+      <div class="spinner"></div>
+      <div class="loader-msg" id="loaderMsg">Processing...</div>
+      <div class="loader-steps">
+        <div class="loader-step" id="ls0"></div>
+        <div class="loader-step" id="ls1"></div>
+        <div class="loader-step" id="ls2"></div>
+        <div class="loader-step" id="ls3"></div>
+      </div>
+    </div>
+
+    <!-- TOAST -->
+    <div class="toast" id="toast"></div>
+
+    <!-- NAVBAR -->
+    <nav class="navbar">
+      <div class="logo">Arron<span>WH</span></div>
+      <div class="nav-badge">SANDBOX DEMO</div>
+    </nav>
+
+    <!-- CONFIG -->
+    <div class="config-bar">
+      <label>API URL</label>
+      <input
+        id="apiUrl"
+        value="http://localhost:5001/api/v1"
+        placeholder="http://localhost:5001/api/v1"
+      />
+      <label>Stripe PK</label>
+      <input id="pkInput" placeholder="pk_test_..." />
+      <span class="config-tag">TEST MODE</span>
+    </div>
+
+    <!-- PROGRESS -->
+    <div class="progress-wrap">
+      <div class="progress-bar" id="progBar">
+        <div class="prog-fill" id="progFill"></div>
+        <div class="step-dot">
+          <div class="step-circle active" id="sc0">1</div>
+          <div class="step-label active" id="sl0">Quiz</div>
+        </div>
+        <div class="step-dot">
+          <div class="step-circle" id="sc1">2</div>
+          <div class="step-label" id="sl1">Boiler</div>
+        </div>
+        <div class="step-dot">
+          <div class="step-circle" id="sc2">3</div>
+          <div class="step-label" id="sl2">Control</div>
+        </div>
+        <div class="step-dot">
+          <div class="step-circle" id="sc3">4</div>
+          <div class="step-label" id="sl3">Extras</div>
+        </div>
+        <div class="step-dot">
+          <div class="step-circle" id="sc4">5</div>
+          <div class="step-label" id="sl4">Schedule</div>
+        </div>
+        <div class="step-dot">
+          <div class="step-circle" id="sc5">6</div>
+          <div class="step-label" id="sl5">Details</div>
+        </div>
+        <div class="step-dot">
+          <div class="step-circle" id="sc6">7</div>
+          <div class="step-label" id="sl6">Address</div>
+        </div>
+        <div class="step-dot">
+          <div class="step-circle" id="sc7">8</div>
+          <div class="step-label" id="sl7">Review</div>
+        </div>
+        <div class="step-dot">
+          <div class="step-circle" id="sc8">9</div>
+          <div class="step-label" id="sl8">Pay</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEPS -->
+    <div class="main">
+      <!-- S0: Quiz -->
+      <div class="step on" id="s0">
+        <div class="card">
+          <div class="card-header">
+            <h2>Tell us about your property</h2>
+            <p>A few quick questions so we can recommend the best boiler</p>
+          </div>
+          <div class="quiz-block" data-qi="0">
+            <div class="quiz-q">1. What type of property do you have?</div>
+            <div class="quiz-opts">
+              <div class="quiz-opt" onclick="qPick(this)">
+                🏠 Detached House
+              </div>
+              <div class="quiz-opt" onclick="qPick(this)">🏘️ Semi-Detached</div>
+              <div class="quiz-opt" onclick="qPick(this)">
+                🏚️ Terraced House
+              </div>
+              <div class="quiz-opt" onclick="qPick(this)">
+                🏢 Flat / Apartment
+              </div>
+            </div>
+          </div>
+          <div class="quiz-block" data-qi="1">
+            <div class="quiz-q">2. How many bedrooms?</div>
+            <div class="quiz-opts">
+              <div class="quiz-opt" onclick="qPick(this)">1–2 Bedrooms</div>
+              <div class="quiz-opt" onclick="qPick(this)">3 Bedrooms</div>
+              <div class="quiz-opt" onclick="qPick(this)">4 Bedrooms</div>
+              <div class="quiz-opt" onclick="qPick(this)">5+ Bedrooms</div>
+            </div>
+          </div>
+          <div class="quiz-block" data-qi="2">
+            <div class="quiz-q">3. Current boiler type?</div>
+            <div class="quiz-opts">
+              <div class="quiz-opt" onclick="qPick(this)">Combi Boiler</div>
+              <div class="quiz-opt" onclick="qPick(this)">System Boiler</div>
+              <div class="quiz-opt" onclick="qPick(this)">Regular Boiler</div>
+              <div class="quiz-opt" onclick="qPick(this)">Not Sure</div>
+            </div>
+          </div>
+          <div class="quiz-block" data-qi="3">
+            <div class="quiz-q">4. How old is your current boiler?</div>
+            <div class="quiz-opts">
+              <div class="quiz-opt" onclick="qPick(this)">
+                Less than 5 years
+              </div>
+              <div class="quiz-opt" onclick="qPick(this)">5–10 years</div>
+              <div class="quiz-opt" onclick="qPick(this)">10+ years</div>
+              <div class="quiz-opt" onclick="qPick(this)">Not Sure</div>
+            </div>
+          </div>
+          <div class="btn-row">
+            <div></div>
+            <button class="btn btn-next" onclick="goTo(1)">Next →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- S1: Boiler -->
+      <div class="step" id="s1">
+        <div class="card">
+          <div class="card-header">
+            <h2>Choose your boiler</h2>
+            <p>Select the perfect boiler for your home</p>
+          </div>
+          <div class="sel-grid" id="gProd">
+            <div
+              class="sel-card"
+              onclick="sPick('prod', this, 'Worcester Greenstar 4000', 1899)"
+            >
+              <span class="sel-icon">🔥</span>
+              <div class="sel-badges">
+                <span class="sel-badge">Best Seller</span
+                ><span class="sel-badge">A-Rated</span>
+              </div>
+              <h4>Worcester Greenstar 4000</h4>
+              <div class="sel-desc">High-efficiency combi, 10yr warranty</div>
+              <div class="sel-price">£1,899</div>
+            </div>
+            <div
+              class="sel-card"
+              onclick="sPick('prod', this, 'Vaillant ecoTEC Plus', 2199)"
+            >
+              <span class="sel-icon">🔥</span>
+              <div class="sel-badges">
+                <span class="sel-badge">Premium</span
+                ><span class="sel-badge">Smart</span>
+              </div>
+              <h4>Vaillant ecoTEC Plus</h4>
+              <div class="sel-desc">
+                Premium system boiler, smart connectivity
+              </div>
+              <div class="sel-price">£2,199</div>
+            </div>
+            <div
+              class="sel-card"
+              onclick="sPick('prod', this, 'Ideal Vogue Max', 1699)"
+            >
+              <span class="sel-icon">🔥</span>
+              <div class="sel-badges">
+                <span class="sel-badge">Compact</span
+                ><span class="sel-badge">Quiet</span>
+              </div>
+              <h4>Ideal Vogue Max</h4>
+              <div class="sel-desc">Compact combi for smaller homes</div>
+              <div class="sel-price">£1,699</div>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-back" onclick="goTo(0)">← Back</button
+            ><button class="btn btn-next" onclick="goTo(2)">Next →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- S2: Controller -->
+      <div class="step" id="s2">
+        <div class="card">
+          <div class="card-header">
+            <h2>Choose your controller</h2>
+            <p>Pick a thermostat for your new boiler</p>
+          </div>
+          <div class="sel-grid" id="gCtrl">
+            <div
+              class="sel-card"
+              onclick="sPick('ctrl', this, 'Hive Active Heating', 249)"
+            >
+              <span class="sel-icon">🌡️</span>
+              <div class="sel-badges">
+                <span class="sel-badge">Smart</span
+                ><span class="sel-badge">WiFi</span>
+              </div>
+              <h4>Hive Active Heating</h4>
+              <div class="sel-desc">Smart thermostat with app control</div>
+              <div class="sel-price">£249 <span class="old">£299</span></div>
+            </div>
+            <div
+              class="sel-card"
+              onclick="sPick('ctrl', this, 'Nest Thermostat', 219)"
+            >
+              <span class="sel-icon">🌡️</span>
+              <div class="sel-badges">
+                <span class="sel-badge">Smart</span
+                ><span class="sel-badge">Learning</span>
+              </div>
+              <h4>Nest Thermostat</h4>
+              <div class="sel-desc">Self-learning smart thermostat</div>
+              <div class="sel-price">£219</div>
+            </div>
+            <div
+              class="sel-card"
+              onclick="sPick('ctrl', this, 'Standard Thermostat', 89)"
+            >
+              <span class="sel-icon">🌡️</span>
+              <div class="sel-badges"><span class="sel-badge">Basic</span></div>
+              <h4>Standard Thermostat</h4>
+              <div class="sel-desc">Simple and reliable</div>
+              <div class="sel-price">£89</div>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-back" onclick="goTo(1)">← Back</button
+            ><button class="btn btn-next" onclick="goTo(3)">Next →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- S3: Extras -->
+      <div class="step" id="s3">
+        <div class="card">
+          <div class="card-header">
+            <h2>Add extras</h2>
+            <p>Optional add-ons for your installation</p>
+          </div>
+          <div class="sel-grid" id="gExt">
+            <div
+              class="sel-card"
+              onclick="sPick('ext', this, 'Magnetic Filter', 120)"
+            >
+              <span class="sel-icon">🧲</span>
+              <h4>Magnetic Filter</h4>
+              <div class="sel-desc">Protects system from sludge</div>
+              <div class="sel-price">£120</div>
+            </div>
+            <div
+              class="sel-card"
+              onclick="sPick('ext', this, 'Power Flush', 350)"
+            >
+              <span class="sel-icon">🚿</span>
+              <h4>Power Flush</h4>
+              <div class="sel-desc">Deep clean your radiators</div>
+              <div class="sel-price">£350</div>
+            </div>
+            <div
+              class="sel-card"
+              onclick="sPick('ext', this, 'Smart TRV Pack', 180)"
+            >
+              <span class="sel-icon">🎛️</span>
+              <h4>Smart TRV Pack (×5)</h4>
+              <div class="sel-desc">Room-by-room control</div>
+              <div class="sel-price">£180</div>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-back" onclick="goTo(2)">← Back</button
+            ><button class="btn btn-next" onclick="goTo(4)">Next →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- S4: Schedule -->
+      <div class="step" id="s4">
+        <div class="card">
+          <div class="card-header">
+            <h2>When should we visit?</h2>
+            <p>Choose your survey and installation dates</p>
+          </div>
+          <div class="form-grid">
+            <div class="form-field">
+              <label>Survey Date</label><input type="date" id="fSurvey" />
+            </div>
+            <div class="form-field">
+              <label>Installation Date</label
+              ><input type="date" id="fInstall" />
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-back" onclick="goTo(3)">← Back</button
+            ><button class="btn btn-next" onclick="goTo(5)">Next →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- S5: Personal Info -->
+      <div class="step" id="s5">
+        <div class="card">
+          <div class="card-header">
+            <h2>Your details</h2>
+            <p>We need your personal info to create the quote</p>
+          </div>
+          <div class="form-grid">
+            <div class="form-field">
+              <label>Title</label>
+              <select id="fTitle">
+                <option value="">Select...</option>
+                <option>Mr</option>
+                <option>Mrs</option>
+                <option>Ms</option>
+                <option>Dr</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label>First Name *</label
+              ><input type="text" id="fFirst" placeholder="John" />
+            </div>
+          </div>
+          <div class="form-grid" style="margin-top: 14px">
+            <div class="form-field">
+              <label>Surname *</label
+              ><input type="text" id="fSure" placeholder="Smith" />
+            </div>
+            <div class="form-field">
+              <label>Email *</label
+              ><input type="email" id="fEmail" placeholder="john@example.com" />
+            </div>
+          </div>
+          <div class="form-grid full" style="margin-top: 14px">
+            <div class="form-field">
+              <label>Mobile *</label
+              ><input type="tel" id="fMobile" placeholder="07XXXXXXXXX" />
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-back" onclick="goTo(4)">← Back</button
+            ><button class="btn btn-next" onclick="goTo(6)">Next →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- S6: Address -->
+      <div class="step" id="s6">
+        <div class="card">
+          <div class="card-header">
+            <h2>Installation address</h2>
+            <p>Where should we install your boiler?</p>
+          </div>
+          <div class="form-grid full">
+            <div class="form-field">
+              <label>Full Address *</label
+              ><textarea
+                id="fAddr"
+                rows="4"
+                placeholder="Enter full address including postcode..."
+              ></textarea>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-back" onclick="goTo(5)">← Back</button
+            ><button class="btn btn-next" onclick="goTo(7)">Next →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- S7: Review -->
+      <div class="step" id="s7">
+        <div class="card">
+          <div class="card-header">
+            <h2>Review your order</h2>
+            <p>Check everything before payment</p>
+          </div>
+          <div class="review-section">
+            <h3>Personal Information</h3>
+            <div class="review-row">
+              <span class="rl">Name</span><span class="rv" id="rN">—</span>
+            </div>
+            <div class="review-row">
+              <span class="rl">Email</span><span class="rv" id="rE">—</span>
+            </div>
+            <div class="review-row">
+              <span class="rl">Mobile</span><span class="rv" id="rM">—</span>
+            </div>
+          </div>
+          <div class="review-section">
+            <h3>Selections</h3>
+            <div class="review-row">
+              <span class="rl">Boiler</span><span class="rv" id="rPd">—</span>
+            </div>
+            <div class="review-row">
+              <span class="rl">Controller</span
+              ><span class="rv" id="rCt">—</span>
+            </div>
+            <div class="review-row">
+              <span class="rl">Extra</span><span class="rv" id="rEx">—</span>
+            </div>
+          </div>
+          <div class="review-section">
+            <h3>Schedule & Address</h3>
+            <div class="review-row">
+              <span class="rl">Survey</span><span class="rv" id="rSv">—</span>
+            </div>
+            <div class="review-row">
+              <span class="rl">Install</span><span class="rv" id="rIn">—</span>
+            </div>
+            <div class="review-row">
+              <span class="rl">Address</span><span class="rv" id="rAd">—</span>
+            </div>
+          </div>
+          <div class="price-box">
+            <h4>Price Breakdown</h4>
+            <div class="price-row">
+              <span>Boiler</span><span id="sP">£0.00</span>
+            </div>
+            <div class="price-row">
+              <span>Controller</span><span id="sC">£0.00</span>
+            </div>
+            <div class="price-row">
+              <span>Extras</span><span id="sE">£0.00</span>
+            </div>
+            <div class="price-row total">
+              <span>Total</span><span id="sT">£0.00</span>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-back" onclick="goTo(6)">← Back</button
+            ><button class="btn btn-next" onclick="goToPayment()">
+              Proceed to Pay →
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- S8: Payment -->
+      <div class="step" id="s8">
+        <div class="card">
+          <div class="card-header">
+            <h2>Secure Payment</h2>
+            <p>Complete your payment — secured by Stripe</p>
+          </div>
+
+          <!-- Price reminder -->
+          <div class="price-box" style="margin-bottom: 24px">
+            <h4>Amount Due</h4>
+            <div
+              class="price-row total"
+              style="margin-top: 0; padding-top: 0; border-top: none"
+            >
+              <span>Total</span><span id="payTotal">£0.00</span>
+            </div>
+          </div>
+
+          <!-- Stripe Payment Element -->
+          <div class="stripe-section">
+            <h3>💳 Card / Apple Pay / Google Pay</h3>
+            <div class="sub">
+              All major cards, Apple Pay, and Google Pay accepted
+            </div>
+            <div class="form-grid" style="margin-bottom: 16px">
+              <div class="form-field">
+                <label>Cardholder Name</label
+                ><input type="text" id="cardName" placeholder="John Smith" />
+              </div>
+              <div class="form-field">
+                <label>Email</label
+                ><input
+                  type="email"
+                  id="cardEmail"
+                  placeholder="john@example.com"
+                />
+              </div>
+            </div>
+            <div id="payment-element"></div>
+            <div id="payment-errors"></div>
+            <div class="stripe-secure">🔒 256-bit SSL — Powered by Stripe</div>
+
+            <!-- Test cards -->
+            <div class="test-cards">
+              <div class="tc-title">🧪 Test Card Details</div>
+              <div class="tc-grid">
+                <div class="tc-item">
+                  <span>Success: </span><strong>4242 4242 4242 4242</strong>
+                </div>
+                <div class="tc-item">
+                  <span>Expiry: </span><strong>12/34 &nbsp; CVC: 123</strong>
+                </div>
+                <div class="tc-item">
+                  <span>Decline: </span><strong>4000 0000 0000 0002</strong>
+                </div>
+                <div class="tc-item">
+                  <span>3D Secure: </span><strong>4000 0025 0000 3155</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="btn-row">
+            <button class="btn btn-back" onclick="goTo(7)">← Back</button>
+            <button class="btn btn-pay" id="btnPay" onclick="doPayment()">
+              🔒 Pay Now →
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- S9: Success -->
+      <div class="step" id="s9">
+        <div class="card">
+          <div class="success-wrap">
+            <div class="success-icon">✓</div>
+            <h2>Payment Successful!</h2>
+            <p class="sub">
+              Your booking is confirmed. We'll be in touch shortly.
+            </p>
+            <div class="confirm-box">
+              <div class="review-row">
+                <span class="rl">Quote ID</span
+                ><span
+                  class="rv"
+                  id="cQ"
+                  style="font-size: 12px; word-break: break-all"
+                  >—</span
+                >
+              </div>
+              <div class="review-row">
+                <span class="rl">Booking ID</span
+                ><span
+                  class="rv"
+                  id="cB"
+                  style="font-size: 12px; word-break: break-all"
+                  >—</span
+                >
+              </div>
+              <div class="review-row">
+                <span class="rl">Payment ID</span
+                ><span
+                  class="rv"
+                  id="cP"
+                  style="font-size: 12px; word-break: break-all"
+                  >—</span
+                >
+              </div>
+              <div class="review-row">
+                <span class="rl">Amount</span
+                ><span
+                  class="rv"
+                  id="cA"
+                  style="color: var(--green); font-size: 18px; font-weight: 800"
+                  >—</span
+                >
+              </div>
+              <div class="review-row">
+                <span class="rl">Status</span
+                ><span class="rv" style="color: var(--green)">✓ Confirmed</span>
+              </div>
+            </div>
+            <button
+              class="btn btn-next"
+              style="margin-top: 28px"
+              onclick="location.reload()"
+            >
+              ← Start Over
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- /main -->
+
+    <!-- API LOG -->
+    <div class="api-log hide" id="apiLog">
+      <button class="log-toggle" onclick="toggleLog()">▲ API Log</button>
+      <div id="logEntries"></div>
+    </div>
+
+    <script>
+      // ══════════════════════════════════════════
+      // STATE
+      // ══════════════════════════════════════════
+      const QUIZ_QUESTIONS = [
+        'What type of property do you have?',
+        'How many bedrooms does your property have?',
+        'What is your current boiler type?',
+        'How old is your current boiler?',
+      ];
+
+      const D = {
+        quiz: [],
+        prodName: '',
+        prodPrice: 0,
+        ctrlName: '',
+        ctrlPrice: 0,
+        extName: '',
+        extPrice: 0,
+        // API IDs
+        quoteId: null,
+        bookingId: null,
+        clientSecret: null,
+        paymentIntentId: null,
+        publishableKey: null,
+      };
+
+      let cur = 0;
+      let stripeInstance = null;
+      let stripeElements = null;
+      let paymentElement = null;
+
+      // ══════════════════════════════════════════
+      // HELPERS
+      // ══════════════════════════════════════════
+      const getAPI = () =>
+        document.getElementById('apiUrl').value.replace(/\/$/, '');
+      const getPK = () => document.getElementById('pkInput').value.trim();
+      const fmt = (n) => '£' + (+n).toFixed(2);
+      const getTotal = () => D.prodPrice + D.ctrlPrice + D.extPrice;
+
+      // ══════════════════════════════════════════
+      // PROGRESS
+      // ══════════════════════════════════════════
+      function updateProg() {
+        const total = 9;
+        const pct = total > 1 ? (cur / (total - 1)) * 100 : 0;
+        document.getElementById('progFill').style.width = pct + '%';
+        for (let i = 0; i < total; i++) {
+          const sc = document.getElementById('sc' + i);
+          const sl = document.getElementById('sl' + i);
+          sc.className = 'step-circle';
+          sl.className = 'step-label';
+          if (i < cur) {
+            sc.classList.add('done');
+            sc.textContent = '✓';
+          } else if (i === cur) {
+            sc.classList.add('active');
+            sl.classList.add('active');
+            sc.textContent = i + 1;
+          } else {
+            sc.textContent = i + 1;
+          }
+        }
+      }
+
+      function goTo(n) {
+        if (n === 7) buildReview();
+        document
+          .querySelectorAll('.step')
+          .forEach((s) => s.classList.remove('on'));
+        document.getElementById('s' + n).classList.add('on');
+        cur = n;
+        updateProg();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+
+      // ══════════════════════════════════════════
+      // QUIZ
+      // ══════════════════════════════════════════
+      function qPick(el) {
+        const block = el.closest('.quiz-block');
+        block
+          .querySelectorAll('.quiz-opt')
+          .forEach((o) => o.classList.remove('sel'));
+        el.classList.add('sel');
+        const idx = parseInt(block.dataset.qi);
+        const ans = el.textContent
+          .replace(/^[\u{1F000}-\u{1FFFF}]\s*/u, '')
+          .trim();
+        D.quiz[idx] = { question: QUIZ_QUESTIONS[idx], answer: ans };
+      }
+
+      // ══════════════════════════════════════════
+      // SELECTIONS
+      // ══════════════════════════════════════════
+      function sPick(type, el, name, price) {
+        const map = { prod: 'gProd', ctrl: 'gCtrl', ext: 'gExt' };
+        document
+          .querySelectorAll('#' + map[type] + ' .sel-card')
+          .forEach((c) => c.classList.remove('sel'));
+        el.classList.add('sel');
+        if (type === 'prod') {
+          D.prodName = name;
+          D.prodPrice = price;
+        }
+        if (type === 'ctrl') {
+          D.ctrlName = name;
+          D.ctrlPrice = price;
+        }
+        if (type === 'ext') {
+          D.extName = name;
+          D.extPrice = price;
+        }
+      }
+
+      // ══════════════════════════════════════════
+      // REVIEW
+      // ══════════════════════════════════════════
+      function buildReview() {
+        const t = document.getElementById('fTitle').value;
+        const f = document.getElementById('fFirst').value;
+        const s = document.getElementById('fSure').value;
+        document.getElementById('rN').textContent =
+          [t, f, s].filter(Boolean).join(' ') || '—';
+        document.getElementById('rE').textContent =
+          document.getElementById('fEmail').value || '—';
+        document.getElementById('rM').textContent =
+          document.getElementById('fMobile').value || '—';
+        document.getElementById('rPd').textContent = D.prodName
+          ? `${D.prodName} — ${fmt(D.prodPrice)}`
+          : '—';
+        document.getElementById('rCt').textContent = D.ctrlName
+          ? `${D.ctrlName} — ${fmt(D.ctrlPrice)}`
+          : '—';
+        document.getElementById('rEx').textContent = D.extName
+          ? `${D.extName} — ${fmt(D.extPrice)}`
+          : 'None';
+        document.getElementById('rSv').textContent =
+          document.getElementById('fSurvey').value || '—';
+        document.getElementById('rIn').textContent =
+          document.getElementById('fInstall').value || '—';
+        document.getElementById('rAd').textContent =
+          document.getElementById('fAddr').value || '—';
+        document.getElementById('sP').textContent = fmt(D.prodPrice);
+        document.getElementById('sC').textContent = fmt(D.ctrlPrice);
+        document.getElementById('sE').textContent = fmt(D.extPrice);
+        document.getElementById('sT').textContent = fmt(getTotal());
+      }
+
+      // ══════════════════════════════════════════
+      // PAYMENT STEP — init Stripe PaymentElement
+      // ══════════════════════════════════════════
+      async function goToPayment() {
+        document.getElementById('payTotal').textContent = fmt(getTotal());
+        // Auto-fill name/email
+        const fn = document.getElementById('fFirst').value;
+        const sn = document.getElementById('fSure').value;
+        const em = document.getElementById('fEmail').value;
+        if (!document.getElementById('cardName').value)
+          document.getElementById('cardName').value = [fn, sn]
+            .filter(Boolean)
+            .join(' ');
+        if (!document.getElementById('cardEmail').value)
+          document.getElementById('cardEmail').value = em;
+
+        goTo(8);
+
+        // Get publishable key — from input or will come from backend
+        const pk = getPK();
+        if (!pk) {
+          document.getElementById('payment-errors').textContent =
+            '⚠️ Enter your Stripe Publishable Key (pk_test_...) in the config bar above.';
+          return;
+        }
+
+        // Create Quote → Booking → PaymentIntent first, then mount element
+        await preparePayment(pk);
+      }
+
+      async function preparePayment(pk) {
+        showLoader('Creating your quote...', 0);
+        try {
+          // Step 1: Create Quote
+          const quoteBody = {
+            personalInfo: {
+              title: document.getElementById('fTitle').value,
+              fastName: document.getElementById('fFirst').value,
+              sureName: document.getElementById('fSure').value,
+              email: document.getElementById('fEmail').value,
+              mobleNumber: document.getElementById('fMobile').value,
+            },
+            quizAnswers: D.quiz.filter(Boolean),
+            surveyDate: document.getElementById('fSurvey').value
+              ? new Date(document.getElementById('fSurvey').value).toISOString()
+              : undefined,
+            installDate: document.getElementById('fInstall').value
+              ? new Date(
+                  document.getElementById('fInstall').value,
+                ).toISOString()
+              : undefined,
+            installAddress: document.getElementById('fAddr').value,
+            payByCard: true,
+          };
+          const qRes = await apiCall('POST', '/quote', quoteBody);
+          D.quoteId = qRes.data._id;
+          toast('✓ Quote created', 'ok');
+          setLoaderStep(1);
+
+          // Step 2: Create Booking
+          setLoaderMsg('Creating booking...');
+          const bRes = await apiCall('POST', '/booking', {
+            quote: D.quoteId,
+            price: getTotal(),
+          });
+          D.bookingId = bRes.data._id;
+          toast('✓ Booking created', 'ok');
+          setLoaderStep(2);
+
+          // Step 3: Create Payment Intent
+          setLoaderMsg('Preparing secure payment...');
+          const pRes = await apiCall('POST', '/payment/' + D.bookingId);
+          D.clientSecret = pRes.data.clientSecret;
+          D.paymentIntentId = pRes.data.paymentIntentId;
+          D.publishableKey = pRes.data.publishableKey || pk;
+          toast('✓ Payment ready', 'ok');
+          setLoaderStep(3);
+
+          // Step 4: Mount Stripe PaymentElement
+          setLoaderMsg('Loading payment form...');
+          const finalPK = D.publishableKey || pk;
+          stripeInstance = Stripe(finalPK);
+          stripeElements = stripeInstance.elements({
+            clientSecret: D.clientSecret,
+          });
+          paymentElement = stripeElements.create('payment', {
+            layout: 'tabs',
+          });
+          paymentElement.mount('#payment-element');
+          paymentElement.on('change', (e) => {
+            document.getElementById('payment-errors').textContent = e.error
+              ? e.error.message
+              : '';
+          });
+
+          hideLoader();
+          logEntry('STRIPE', 'PaymentElement mounted ✓', 'stripe');
+        } catch (err) {
+          hideLoader();
+          toast('❌ ' + err.message, 'err');
+          document.getElementById('payment-errors').textContent = err.message;
+        }
+      }
+
+      // ══════════════════════════════════════════
+      // CONFIRM PAYMENT
+      // ══════════════════════════════════════════
+      async function doPayment() {
+        if (!stripeInstance || !paymentElement) {
+          toast(
+            '⚠️ Payment form not ready. Enter your Stripe PK above.',
+            'err',
+          );
+          return;
+        }
+        const btn = document.getElementById('btnPay');
+        btn.disabled = true;
+        btn.textContent = '⏳ Processing...';
+        showLoader('Confirming payment...', 3);
+
+        try {
+          logEntry('STRIPE', 'confirmPayment →', 'stripe');
+          const { error, paymentIntent } = await stripeInstance.confirmPayment({
+            elements: stripeElements,
+            redirect: 'if_required',
+            confirmParams: {
+              return_url: window.location.href,
+              payment_method_data: {
+                billing_details: {
+                  name: document.getElementById('cardName').value,
+                  email: document.getElementById('cardEmail').value,
+                },
+              },
+            },
+          });
+
+          if (error) {
+            logEntry('STRIPE', 'FAILED: ' + error.message, 'err');
+            throw new Error(error.message);
+          }
+
+          logEntry('STRIPE', 'Status: ' + paymentIntent.status, 'ok');
+
+          if (paymentIntent.status === 'succeeded') {
+            toast('🎉 Payment successful!', 'ok');
+            document.getElementById('cQ').textContent = D.quoteId;
+            document.getElementById('cB').textContent = D.bookingId;
+            document.getElementById('cP').textContent = paymentIntent.id;
+            document.getElementById('cA').textContent = fmt(getTotal());
+            hideLoader();
+            goTo(9);
+          } else if (paymentIntent.status === 'requires_action') {
+            setLoaderMsg('Completing authentication...');
+            toast('Authentication required...', 'info');
+            hideLoader();
+            btn.disabled = false;
+            btn.textContent = '🔒 Pay Now →';
+          } else {
+            throw new Error('Unexpected status: ' + paymentIntent.status);
+          }
+        } catch (err) {
+          hideLoader();
+          toast('❌ ' + err.message, 'err');
+          document.getElementById('payment-errors').textContent = err.message;
+          btn.disabled = false;
+          btn.textContent = '🔒 Pay Now →';
+        }
+      }
+
+      // ══════════════════════════════════════════
+      // API HELPER
+      // ══════════════════════════════════════════
+      async function apiCall(method, path, body) {
+        const url = getAPI() + path;
+        logEntry(
+          method,
+          path +
+            (body ? ' ' + JSON.stringify(body).substring(0, 80) + '…' : ''),
+          'req',
+        );
+        const opts = {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+        };
+        if (body) opts.body = JSON.stringify(body);
+        const res = await fetch(url, opts);
+        const json = await res.json();
+        logEntry(
+          method,
+          path +
+            ' [' +
+            res.status +
+            '] ' +
+            JSON.stringify(json).substring(0, 100),
+          res.ok ? 'ok' : 'err',
+        );
+        if (!res.ok) throw new Error(json.message || 'API Error ' + res.status);
+        return json;
+      }
+
+      // ══════════════════════════════════════════
+      // LOADER
+      // ══════════════════════════════════════════
+      function showLoader(msg, step) {
+        document.getElementById('loaderMsg').textContent =
+          msg || 'Processing...';
+        document.getElementById('loader').classList.add('on');
+        for (let i = 0; i < 4; i++) {
+          const el = document.getElementById('ls' + i);
+          el.classList.toggle('on', i <= (step || 0));
+        }
+      }
+      function setLoaderMsg(msg) {
+        document.getElementById('loaderMsg').textContent = msg;
+      }
+      function setLoaderStep(step) {
+        for (let i = 0; i < 4; i++)
+          document.getElementById('ls' + i).classList.toggle('on', i <= step);
+      }
+      function hideLoader() {
+        document.getElementById('loader').classList.remove('on');
+      }
+
+      // ══════════════════════════════════════════
+      // TOAST
+      // ══════════════════════════════════════════
+      function toast(msg, type) {
+        const el = document.getElementById('toast');
+        el.className = 'toast ' + type;
+        el.textContent = msg;
+        el.classList.add('show');
+        setTimeout(() => el.classList.remove('show'), 4000);
+      }
+
+      // ══════════════════════════════════════════
+      // API LOG
+      // ══════════════════════════════════════════
+      function logEntry(method, msg, type) {
+        const el = document.getElementById('logEntries');
+        const ts = new Date().toLocaleTimeString();
+        const cls =
+          type === 'req'
+            ? 'log-req'
+            : type === 'ok'
+              ? 'log-ok'
+              : type === 'stripe'
+                ? 'log-stripe'
+                : 'log-err';
+        el.innerHTML += `<div class="log-entry"><span class="log-ts">${ts}</span><span class="${cls}">[${method}] ${msg}</span></div>`;
+        el.scrollTop = el.scrollHeight;
+        document.getElementById('apiLog').classList.remove('hide');
+      }
+      function toggleLog() {
+        const log = document.getElementById('apiLog');
+        log.classList.toggle('hide');
+        document.querySelector('.log-toggle').textContent =
+          log.classList.contains('hide') ? '▲ API Log' : '▼ API Log';
+      }
+
+      // INIT
+      updateProg();
+    </script>
+  </body>
+</html>

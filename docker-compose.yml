@@ -1,0 +1,29 @@
+services:
+  app:
+    image: ${DOCKER_USERNAME}/arronwh:latest
+    container_name: cicd-docker-app
+    restart: unless-stopped
+    ports:
+      - '5001:5001'
+    env_file:
+      - .env
+    networks:
+      - backend_network
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'wget',
+          '--quiet',
+          '--tries=1',
+          '--spider',
+          'http://localhost:5000',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  backend_network:
+    driver: bridge

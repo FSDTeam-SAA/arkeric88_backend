@@ -1,0 +1,26 @@
+node_modules
+dist
+build
+coverage
+
+.git
+.gitignore
+
+# .env কখনো image এ নেবে না!
+.env
+.env.*
+!.env.example
+
+.vscode
+.idea
+.DS_Store
+
+README.md
+*.md
+
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+npm-debug.log*
+*.log
