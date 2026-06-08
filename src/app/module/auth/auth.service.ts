@@ -8,6 +8,7 @@ import * as bcrypt from 'bcrypt';
 import * as jwt from '@nestjs/jwt';
 import config from '../../config';
 import sendMailer from 'src/app/helpers/sendMailer';
+import { createForgotPasswordEmailTemplate } from 'src/app/helpers/template';
 
 @Injectable()
 export class AuthService {
@@ -74,22 +75,15 @@ export class AuthService {
     user.otpExpiry = new Date(Date.now() + 60 * 60 * 1000);
     await user.save();
 
-    const fallbackHtml = `
-    <div style="font-family: Arial; text-align: center;">
-      <h2 style="color:#4f46e5;">Password Reset OTP</h2>
-      <p>Your OTP code is:</p>
-      <h1 style="letter-spacing:4px;">${generateOtpNumber}</h1>
-      <p>This code will expire in 1 hour.</p>
-    </div>
-  `;
-    // const emailTemplate = await this.emailTemplateService.render({
-    //   key: 'password-reset-otp',
-    //   fallbackSubject: 'Reset Password OTP',
-    //   fallbackHtml,
-    //   context: createPasswordResetContext(generateOtpNumber),
-    // });
+    const emailTemplate = {
+      subject: 'Reset Password OTP',
+      html: createForgotPasswordEmailTemplate({
+        otp: generateOtpNumber,
+        expiryMinutes: 10,
+      }),
+    };
 
-    // await sendMailer(user.email, emailTemplate.subject, emailTemplate.html);
+    await sendMailer(user.email, emailTemplate.subject, emailTemplate.html);
 
     return { message: 'Check your email for OTP' };
   }
