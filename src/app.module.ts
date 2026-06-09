@@ -7,6 +7,7 @@ import config from './app/config';
 import { AuthModule } from './app/module/auth/auth.module';
 import { UserModule } from './app/module/user/user.module';
 import { PaymentModule } from './app/module/payment/payment.module';
+import { HistoryModule } from './app/module/history/history.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { PaymentModule } from './app/module/payment/payment.module';
     AuthModule,
     UserModule,
     PaymentModule,
+    HistoryModule,
   ],
 
   controllers: [AppController],
