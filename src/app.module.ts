@@ -6,7 +6,7 @@ import { AppService } from './app.service';
 import config from './app/config';
 import { AuthModule } from './app/module/auth/auth.module';
 import { UserModule } from './app/module/user/user.module';
-
+import { PaymentModule } from './app/module/payment/payment.module';
 
 @Module({
   imports: [
@@ -14,9 +14,8 @@ import { UserModule } from './app/module/user/user.module';
     MongooseModule.forRoot(config.mongoUri as string),
     AuthModule,
     UserModule,
-   
+    PaymentModule,
   ],
-
 
   controllers: [AppController],
   providers: [AppService],
