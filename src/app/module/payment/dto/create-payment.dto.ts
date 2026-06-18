@@ -5,13 +5,27 @@ import {
   IsOptional,
   IsString,
   IsEnum,
+  IsArray,
   Min,
   MaxLength,
   Matches,
+  ValidateNested,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentCurrency } from '../entities/payment.entity';
+
+export class QuizItemDto {
+  @ApiProperty({ example: 'What is 2+2?' })
+  @IsNotEmpty()
+  @IsString()
+  question: string;
+
+  @ApiProperty({ example: '4' })
+  @IsNotEmpty()
+  @IsString()
+  answer: string;
+}
 
 export class CreatePaymentDto {
   @ApiProperty({ example: 49.99, description: 'Amount in major currency unit (e.g. dollars)' })
@@ -61,4 +75,15 @@ export class CreatePaymentDto {
   @MaxLength(20)
   @Transform(({ value }) => value?.trim())
   zipCode?: string;
+
+  @ApiPropertyOptional({
+    description: 'Quiz questions and answers',
+    example: [{ question: 'What is 2+2?', answer: '4' }],
+    type: [QuizItemDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => QuizItemDto)
+  quiz?: QuizItemDto[];
 }

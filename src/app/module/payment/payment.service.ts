@@ -85,6 +85,7 @@ export class PaymentService implements IPaymentService {
       stripePaymentIntentId: paymentIntent.id,
       status: PaymentStatus.PENDING,
       paymentMethod: 'card',
+      quiz: dto.quiz ?? [],
     });
 
     this.logger.log(`PaymentIntent created: ${paymentIntent.id} | DB: ${payment._id}`);
@@ -102,6 +103,7 @@ export class PaymentService implements IPaymentService {
       currency,
       description,
       publishableKey,
+      quiz: payment.quiz ?? [],
     };
   }
 
@@ -270,6 +272,7 @@ export class PaymentService implements IPaymentService {
           'Payment Confirmation',
           html,
         );
+        
         this.logger.log(`Payment confirmation email sent to ${payment.email}`);
       } catch (error) {
         this.logger.warn(`Failed to send payment confirmation email to ${payment.email}: ${(error as Error).message}`);

@@ -15,65 +15,92 @@
       .row{display:flex;gap:10px}
       .row > *{flex:1}
       button{width:100%;margin-top:16px;background:var(--accent);color:#fff;border:none;padding:12px;border-radius:8px;font-weight:600;cursor:pointer}
+      button:disabled{opacity:0.5;cursor:not-allowed}
       .muted{font-size:13px;color:#666;margin-top:8px}
       .notice{font-size:13px;padding:8px;background:#f8faf8;border-radius:6px;margin-top:10px;color:#224}
       .result{margin-top:14px;padding:10px;border-radius:6px}
       .success{background:#e6faf0;border:1px solid #b6f0cf;color:#064}
       .error{background:#fff1f1;border:1px solid #f2c2c2;color:#900}
+      .hidden{display:none !important}
+      .quiz-item{border:1px solid #e6e2dd;border-radius:6px;padding:12px;margin-top:10px}
+      .quiz-item label{margin-top:0;font-weight:600;color:#333}
+      .quiz-item input{margin-top:4px}
     </style>
   </head>
   <body>
     <div class="wrap">
-      <h2>Test Payment</h2>
+      <!-- ─── QUIZ SECTION ────────────────────────────────────────────── -->
+      <div id="quizSection">
+        <h2>Quick Quiz</h2>
+        <p class="muted">Answer the questions below, then click Continue to proceed to payment.</p>
 
-      <label>Backend base URL
-        <input id="backendUrl" type="text" value="http://localhost:5000/api/v1" />
-      </label>
+        <div id="quizContainer"></div>
 
-      <label>Amount (major unit, e.g. 2.50)
-        <input id="amount" type="number" step="0.01" value="2.00" />
-      </label>
-
-      <label>Description
-        <input id="description" type="text" value="Test one-time payment" />
-      </label>
-
-      <label>Name on Card
-        <input id="nameOnCard" type="text" value="John Doe" />
-      </label>
-
-      <div class="row">
-        <div>
-          <label>Country
-            <input id="country" type="text" value="US" />
-          </label>
-        </div>
-        <div>
-          <label>ZIP Code
-            <input id="zipCode" type="text" value="12345" />
-          </label>
-        </div>
+        <button id="continueBtn" type="button">Continue to Payment →</button>
+        <div id="quizResult" class="result" style="display:none"></div>
       </div>
 
-      <label>Card details
-        <div id="card-element"></div>
-      </label>
+      <!-- ─── PAYMENT SECTION ─────────────────────────────────────────── -->
+      <div id="paymentSection" class="hidden">
+        <h2>Test Payment</h2>
 
-      <button id="pay" type="button">Pay Now</button>
+        <label>Backend base URL
+          <input id="backendUrl" type="text" value="http://localhost:5000/api/v1" />
+        </label>
 
-      <div class="muted">Test cards: <strong>4242 4242 4242 4242</strong> — any future expiry, any CVC (e.g. 123).</div>
+        <label>Amount (major unit, e.g. 2.50)
+          <input id="amount" type="number" step="0.01" value="2.00" />
+        </label>
 
-      <div id="result" class="result" style="display:none"></div>
+        <label>Description
+          <input id="description" type="text" value="Test one-time payment" />
+        </label>
+
+        <label>Name on Card
+          <input id="nameOnCard" type="text" value="John Doe" />
+        </label>
+
+        <div class="row">
+          <div>
+            <label>Country
+              <input id="country" type="text" value="US" />
+            </label>
+          </div>
+          <div>
+            <label>ZIP Code
+              <input id="zipCode" type="text" value="12345" />
+            </label>
+          </div>
+        </div>
+
+        <label>Card details
+          <div id="card-element"></div>
+        </label>
+
+        <button id="pay" type="button">Pay Now</button>
+
+        <div class="muted">Test cards: <strong>4242 4242 4242 4242</strong> — any future expiry, any CVC (e.g. 123).</div>
+
+        <div id="result" class="result" style="display:none"></div>
+      </div>
     </div>
 
     <script src="https://js.stripe.com/v3/"></script>
     <script>
-      // Minimal Stripe Elements test harness.
-      // Steps:
-      // 1) Enter backend URL (default http://localhost:3000/api/v1)
-      // 2) Set amount, name, country, zip as you like
-      // 3) Click Pay Now — page will request a payment intent from your backend
-      // 4) The backend must return { message, data: { clientSecret, publishableKey, paymentIntentId, paymentId } }
+      // ─── Quiz configuration ───────────────────────────────────────────
+      const QUIZ_QUESTIONS = [
+        { question: 'What is the capital of Bangladesh?', answer: 'Dhaka' },
+        { question: 'What is 5 × 6?', answer: '30' },
+        { question: 'Which planet is known as the Red Planet?', answer: 'Mars' },
+        { question: 'What is the chemical symbol for water?', answer: 'H2O' },
+      ];
+
+      // ─── DOM refs ────────────────────────────────────────────────────
+      const quizSection = document.getElementById('quizSection');
+      const quizContainer = document.getElementById('quizContainer');
+      const quizResult = document.getElementById('quizResult');
+      const continueBtn = document.getElementById('continueBtn');
+      const paymentSection = document.getElementById('paymentSection');
 
       const payButton = document.getElementById('pay');
       const backendInput = document.getElementById('backendUrl');
@@ -89,6 +116,52 @@
       let clientSecret = null;
       let paymentIntentCreated = false;
 
+      // ─── Render quiz questions ───────────────────────────────────────
+      function renderQuiz() {
+        quizContainer.innerHTML = '';
+        QUIZ_QUESTIONS.forEach((q, i) => {
+          const div = document.createElement('div');
+          div.className = 'quiz-item';
+          div.innerHTML = `
+            <label>${i + 1}. ${q.question}</label>
+            <input type="text" class="quiz-answer" data-index="${i}" placeholder="Your answer..." />
+          `;
+          quizContainer.appendChild(div);
+        });
+      }
+
+      function getQuizAnswers() {
+        const inputs = document.querySelectorAll('.quiz-answer');
+        return Array.from(inputs).map((input, i) => ({
+          question: QUIZ_QUESTIONS[i].question,
+          answer: input.value.trim(),
+        }));
+      }
+
+      function validateQuiz() {
+        const inputs = document.querySelectorAll('.quiz-answer');
+        for (const input of inputs) {
+          if (!input.value.trim()) {
+            return false;
+          }
+        }
+        return true;
+      }
+
+      // ─── Quiz Continue handler ───────────────────────────────────────
+      continueBtn.addEventListener('click', () => {
+        if (!validateQuiz()) {
+          quizResult.style.display = 'block';
+          quizResult.className = 'result error';
+          quizResult.textContent = 'Please answer all questions before continuing.';
+          return;
+        }
+        quizResult.style.display = 'none';
+        quizSection.classList.add('hidden');
+        paymentSection.classList.remove('hidden');
+      });
+
+      // ─── Payment helpers ─────────────────────────────────────────────
       function showResult(message, ok = true) {
         resultEl.style.display = 'block';
         resultEl.className = 'result ' + (ok ? 'success' : 'error');
@@ -101,7 +174,7 @@
       }
 
       function mountCardElement(publishableKey) {
-        if (stripe && card) return; // already mounted
+        if (stripe && card) return;
         stripe = Stripe(publishableKey);
         const elements = stripe.elements();
         card = elements.create('card', { style: { base: { fontSize: '16px' } } });
@@ -112,6 +185,7 @@
         resetResult();
         payButton.disabled = true;
         const backend = backendInput.value.replace(/\/$/, '');
+        const quizData = getQuizAnswers();
         const payload = {
           amount: parseFloat(amountInput.value || '0'),
           currency: 'usd',
@@ -119,6 +193,7 @@
           nameOnCard: nameInput.value,
           country: countryInput.value,
           zipCode: zipInput.value,
+          quiz: quizData,
         };
 
         try {
@@ -133,7 +208,6 @@
             throw new Error((json && json.message) || 'Failed to create payment intent');
           }
 
-          // Support backend returning either { message, data: {...} } or direct object
           const data = json.data || json;
           clientSecret = data.clientSecret || data.client_secret;
           const publishableKey = data.publishableKey || data.publishable_key || data.publishable_key;
@@ -192,9 +266,9 @@
           confirmCardPayment();
         }
       });
+
+      // ─── Init ────────────────────────────────────────────────────────
+      renderQuiz();
     </script>
   </body>
 </html>
-
-
-//hello
