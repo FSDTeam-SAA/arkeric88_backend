@@ -16,7 +16,7 @@ export class CreateAuthDto {
   @MinLength(6, { message: 'Password must be at least 6 characters' })
   password: string;
 
-  @ApiPropertyOptional({ example: '1234567890' })
+  @ApiPropertyOptional({ example: '01234567890' })
   @IsString()
   @MinLength(11, { message: 'Phone number must be at least 11 characters' })
   phone: string;
