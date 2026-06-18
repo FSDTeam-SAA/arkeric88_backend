@@ -75,10 +75,10 @@ async function bootstrap() {
   app.useGlobalFilters(new GlobalExceptionFilter(httpAdapterHost));
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('Arkeric878 API')
-    .setDescription('Arkeric878 API Documentation')
+    .setTitle('Arkeric88 API')
+    .setDescription('Arkeric88 API Documentation')
     .setVersion('1.0')
-    .addTag('Arkeric878')
+    .addTag('Arkeric88')
     .addBearerAuth(
       {
         type: 'http',
