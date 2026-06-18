@@ -62,6 +62,13 @@ export class Payment {
 
   @Prop({ index: true, sparse: true })
   stripePaymentIntentId?: string;
+
+  @Prop({
+    type: [{ question: { type: String, required: true }, answer: { type: String, required: true } }],
+    default: [],
+    _id: false,
+  })
+  quiz?: { question: string; answer: string }[];
 }
 
 export const PaymentSchema = SchemaFactory.createForClass(Payment);

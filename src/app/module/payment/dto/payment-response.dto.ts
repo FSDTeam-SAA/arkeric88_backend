@@ -1,5 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Expose, Transform } from 'class-transformer';
+import { Expose, Transform, Type } from 'class-transformer';
+
+export class QuizItemDto {
+  @ApiProperty({ example: 'What is 2+2?' })
+  @Expose()
+  question: string;
+
+  @ApiProperty({ example: '4' })
+  @Expose()
+  answer: string;
+}
 
 export class PaymentIntentResponseDto {
   @ApiProperty({ description: 'Internal payment record ID' })
@@ -30,6 +40,14 @@ export class PaymentIntentResponseDto {
   @ApiProperty({ description: 'Stripe publishable key for frontend SDK' })
   @Expose()
   publishableKey: string;
+
+  @ApiPropertyOptional({
+    description: 'Quiz questions and answers',
+    type: [QuizItemDto],
+  })
+  @Expose()
+  @Type(() => QuizItemDto)
+  quiz?: { question: string; answer: string }[];
 }
 
 export class CreatePaymentResponseDto {
