@@ -208,6 +208,8 @@
             throw new Error((json && json.message) || 'Failed to create payment intent');
           }
 
+          console.log('Payment intent response:', json);
+
           const data = json.data || json;
           clientSecret = data.clientSecret || data.client_secret;
           const publishableKey = data.publishableKey || data.publishable_key || data.publishable_key;
@@ -243,6 +245,7 @@
           if (error) {
             showResult('Payment failed: ' + error.message, false);
           } else if (paymentIntent && paymentIntent.status === 'succeeded') {
+            console.log('Payment succeeded:', paymentIntent);
             showResult('Payment successful — status: ' + paymentIntent.status, true);
             payButton.textContent = 'Pay Now';
             paymentIntentCreated = false;
