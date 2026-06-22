@@ -76,6 +76,7 @@ export class PaymentController {
     };
   }
 
+
   /**
    * GET /payments/:id
    * Retrieve a payment record by its internal MongoDB ID.
