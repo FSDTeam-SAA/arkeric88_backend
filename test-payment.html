@@ -4,6 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Test Payment</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
       :root{--bg:#f3f1ed;--card:#fff;--accent:#4f5949;}
       body{margin:0;font-family:Inter,system-ui,Arial,sans-serif;background:linear-gradient(180deg,#efede9, #f7f6f4);min-height:100vh;display:flex;align-items:center;justify-content:center}
@@ -22,24 +24,110 @@
       .success{background:#e6faf0;border:1px solid #b6f0cf;color:#064}
       .error{background:#fff1f1;border:1px solid #f2c2c2;color:#900}
       .hidden{display:none !important}
-      .quiz-item{border:1px solid #e6e2dd;border-radius:6px;padding:12px;margin-top:10px}
-      .quiz-item label{margin-top:0;font-weight:600;color:#333}
-      .quiz-item input{margin-top:4px}
+
+      /* ─── QUIZ (Velari-style multi-step) ───────────────────────────── */
+      .quiz-overlay{
+        position:fixed; inset:0; z-index:1000;
+        background:#f5f1ea;
+        display:flex; flex-direction:column;
+        font-family:Inter,system-ui,Arial,sans-serif;
+      }
+      .quiz-header{
+        display:flex; align-items:center; justify-content:space-between;
+        padding:26px 44px;
+      }
+      .quiz-back, .quiz-save{
+        all:unset; cursor:pointer; font-size:13px; color:#7a7468;
+        padding:6px 8px; border-radius:6px;
+      }
+      .quiz-back:hover, .quiz-save:hover{ color:#4a463d; }
+      .quiz-back:disabled{ opacity:0; cursor:default; pointer-events:none; }
+      .quiz-logo{
+        display:flex; align-items:center; gap:8px;
+        font-family:'Playfair Display',Georgia,serif;
+        font-size:18px; letter-spacing:2px; color:#3a3730;
+      }
+      .quiz-logo svg{ width:18px; height:18px; color:#b8935b; }
+      .quiz-body{
+        flex:1; display:flex; flex-direction:column;
+        align-items:center; justify-content:center;
+        padding:10px 28px; text-align:center;
+      }
+      .quiz-progress{
+        font-size:11px; letter-spacing:2.5px; text-transform:uppercase;
+        color:#a39d8e; margin-bottom:16px;
+      }
+      .quiz-question{
+        font-family:'Playfair Display',Georgia,serif;
+        font-weight:500; font-size:28px; line-height:1.32;
+        color:#2c2a24; max-width:520px; margin:0 0 38px;
+      }
+      .quiz-options{
+        display:grid; gap:12px; width:100%; max-width:520px;
+      }
+      .quiz-options.cols-2{ grid-template-columns:repeat(2,1fr); }
+      .quiz-options.cols-3{ grid-template-columns:repeat(3,1fr); }
+      .quiz-options.cols-4{ grid-template-columns:repeat(4,1fr); max-width:680px; }
+      .quiz-option{
+        all:unset; cursor:pointer;
+        display:flex; align-items:center; gap:10px;
+        border:1px solid #e4ded2; background:#fff; border-radius:8px;
+        padding:14px 16px; font-size:14px; color:#3a3730;
+        text-align:left; transition:border-color .15s ease, background .15s ease;
+        box-sizing:border-box;
+      }
+      .quiz-option:hover{ border-color:#cdc4b2; }
+      .quiz-option.selected{ border-color:#4f5949; background:#f2f6f0; }
+      .quiz-option svg{ width:16px; height:16px; flex-shrink:0; color:#8a8475; }
+      .quiz-option.selected svg{ color:#4f5949; }
+      .quiz-option-title{ font-weight:600; }
+      .quiz-options.cols-4 .quiz-option{
+        flex-direction:column; align-items:flex-start; gap:8px;
+      }
+      .quiz-option-desc{ font-size:12px; color:#938c7c; line-height:1.4; }
+      .quiz-footer{
+        padding:22px 44px 44px; display:flex; justify-content:center;
+      }
+      .quiz-continue{
+        all:unset; cursor:pointer;
+        background:var(--accent); color:#fff; font-weight:600; font-size:14px;
+        padding:14px 36px; border-radius:24px;
+        display:inline-flex; align-items:center; gap:8px;
+        transition:opacity .15s ease;
+      }
+      .quiz-continue:disabled{ opacity:.4; cursor:not-allowed; }
+      @media (max-width:640px){
+        .quiz-header{ padding:20px 20px; }
+        .quiz-question{ font-size:22px; }
+        .quiz-options.cols-2, .quiz-options.cols-3, .quiz-options.cols-4{ grid-template-columns:1fr 1fr; max-width:420px; }
+        .quiz-footer{ padding:18px 20px 32px; }
+      }
     </style>
   </head>
   <body>
-    <div class="wrap">
-      <!-- ─── QUIZ SECTION ────────────────────────────────────────────── -->
-      <div id="quizSection">
-        <h2>Quick Quiz</h2>
-        <p class="muted">Answer the questions below, then click Continue to proceed to payment.</p>
-
-        <div id="quizContainer"></div>
-
-        <button id="continueBtn" type="button">Continue to Payment →</button>
-        <div id="quizResult" class="result" style="display:none"></div>
+    <!-- ─── QUIZ OVERLAY ────────────────────────────────────────────── -->
+    <div id="quizSection" class="quiz-overlay">
+      <div class="quiz-header">
+        <button id="quizBack" class="quiz-back" type="button">← Back</button>
+        <div class="quiz-logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 21c-4-2.5-7-6-7-10A7 7 0 0 1 12 3a7 7 0 0 1 7 8c0 4-3 7.5-7 10z"/></svg>
+          VELARI
+        </div>
+        <button id="quizSave" class="quiz-save" type="button">Save &amp; Exit</button>
       </div>
 
+      <div class="quiz-body">
+        <div class="quiz-progress" id="quizProgress"></div>
+        <h1 class="quiz-question" id="quizQuestionText"></h1>
+        <div class="quiz-options" id="quizOptions"></div>
+      </div>
+
+      <div class="quiz-footer">
+        <button id="continueBtn" class="quiz-continue" type="button" disabled>Continue →</button>
+      </div>
+    </div>
+
+    <div class="wrap">
       <!-- ─── PAYMENT SECTION ─────────────────────────────────────────── -->
       <div id="paymentSection" class="hidden">
         <h2>Test Payment</h2>
@@ -88,18 +176,84 @@
     <script src="https://js.stripe.com/v3/"></script>
     <script>
       // ─── Quiz configuration ───────────────────────────────────────────
+      const ICONS = {
+        cloud:   '<path d="M17.5 19H9a5 5 0 1 1 .5-9.9 6 6 0 0 1 11.6 2.1A4 4 0 0 1 17.5 19z"/>',
+        smile:   '<circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><path d="M9 9h.01M15 9h.01"/>',
+        zap:     '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+        compass: '<circle cx="12" cy="12" r="9"/><polygon points="16 8 13.5 13.5 8 16 10.5 10.5 16 8"/>',
+        sparkle: '<path d="M12 3l1.6 4.9L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.1z"/>',
+        dots:    '<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>',
+        moon:    '<path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/>',
+        heart:   '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8z"/>',
+        star:    '<polygon points="12 2 15 9 22 9.5 17 14 18.5 21 12 17.5 5.5 21 7 14 2 9.5 9 9"/>',
+        wind:    '<path d="M9.5 4.5a2.5 2.5 0 1 1 2 4H2"/><path d="M14 9.5a2.5 2.5 0 1 1 2 4H2"/><path d="M11 19.5a2.5 2.5 0 1 0 2-4H2"/>',
+        feather: '<path d="M20.2 12.2a6 6 0 0 0-8.4-8.4L5 10.5V19h8.5z"/><line x1="16" y1="8" x2="2" y2="22"/><line x1="17.5" y1="15" x2="9" y2="15"/>',
+        flame:   '<path d="M12 2s5 5.2 5 10a5 5 0 0 1-10 0c0-1.8.8-2.9.8-2.9s.6 1.4 1.6 1.4c0-2.6-2.4-4.3-2.4-7.1 0 0 1.8.9 1.8 2.6 0-2.6 3.2-3.6 3.2-4z"/>',
+        bolt:    '<polygon points="13 2 4 13 11 13 10 22 20 11 13 11 13 2"/>',
+        user:    '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0 1 16 0v1"/>',
+        couple:  '<circle cx="8.5" cy="8" r="3"/><circle cx="15.5" cy="8" r="3"/><path d="M2 21v-1a6 6 0 0 1 9-5.2"/><path d="M22 21v-1a6 6 0 0 0-9-5.2"/>',
+        group:   '<circle cx="8" cy="8" r="2.6"/><circle cx="16" cy="8" r="2.6"/><circle cx="12" cy="14" r="2.6"/><path d="M2 21c0-2.8 2.4-4.6 6-4.6"/><path d="M22 21c0-2.8-2.4-4.6-6-4.6"/>',
+        home:    '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>'
+      };
+
+      function iconSvg(name){
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' + (ICONS[name] || '') + '</svg>';
+      }
+
       const QUIZ_QUESTIONS = [
-        { question: 'What is the capital of Bangladesh?', answer: 'Dhaka' },
-        { question: 'What is 5 × 6?', answer: '30' },
-        { question: 'Which planet is known as the Red Planet?', answer: 'Mars' },
-        { question: 'What is the chemical symbol for water?', answer: 'H2O' },
+        {
+          question: 'How are you feeling today?',
+          layout: 'cols-2',
+          options: [
+            { label: 'Overwhelmed', icon: 'cloud' },
+            { label: 'Calm', icon: 'smile' },
+            { label: 'Stressed', icon: 'zap' },
+            { label: 'Adventurous', icon: 'compass' },
+            { label: 'Inspired', icon: 'sparkle' },
+            { label: 'Other', icon: 'dots' },
+          ]
+        },
+        {
+          question: 'What kind of experience is calling to you?',
+          layout: 'cols-3',
+          options: [
+            { label: 'Deep Rest', icon: 'moon' },
+            { label: 'Inner Peace', icon: 'heart' },
+            { label: 'Celebration', icon: 'star' },
+            { label: 'Exploration', icon: 'compass' },
+            { label: 'Escape', icon: 'wind' },
+            { label: 'Spiritual', icon: 'sparkle' },
+          ]
+        },
+        {
+          question: "What's your energy like for this trip?",
+          layout: 'cols-3',
+          options: [
+            { label: 'Low', icon: 'feather' },
+            { label: 'Medium', icon: 'flame' },
+            { label: 'High', icon: 'bolt' },
+          ]
+        },
+        {
+          question: 'How do you want to experience this journey?',
+          layout: 'cols-4',
+          options: [
+            { label: 'Solo', desc: 'Just me and my thoughts', icon: 'user' },
+            { label: 'Couple', desc: 'An intimate shared experience', icon: 'couple' },
+            { label: 'Small Group', desc: '2–6 close companions', icon: 'group' },
+            { label: 'Family', desc: 'Travel with loved ones', icon: 'home' },
+          ]
+        },
       ];
 
       // ─── DOM refs ────────────────────────────────────────────────────
       const quizSection = document.getElementById('quizSection');
-      const quizContainer = document.getElementById('quizContainer');
-      const quizResult = document.getElementById('quizResult');
+      const quizProgress = document.getElementById('quizProgress');
+      const quizQuestionText = document.getElementById('quizQuestionText');
+      const quizOptionsEl = document.getElementById('quizOptions');
       const continueBtn = document.getElementById('continueBtn');
+      const quizBackBtn = document.getElementById('quizBack');
+      const quizSaveBtn = document.getElementById('quizSave');
       const paymentSection = document.getElementById('paymentSection');
 
       const payButton = document.getElementById('pay');
@@ -116,49 +270,70 @@
       let clientSecret = null;
       let paymentIntentCreated = false;
 
-      // ─── Render quiz questions ───────────────────────────────────────
-      function renderQuiz() {
-        quizContainer.innerHTML = '';
-        QUIZ_QUESTIONS.forEach((q, i) => {
-          const div = document.createElement('div');
-          div.className = 'quiz-item';
-          div.innerHTML = `
-            <label>${i + 1}. ${q.question}</label>
-            <input type="text" class="quiz-answer" data-index="${i}" placeholder="Your answer..." />
-          `;
-          quizContainer.appendChild(div);
+      let currentQuestion = 0;
+      const quizSelections = new Array(QUIZ_QUESTIONS.length).fill(null);
+
+      // ─── Render current quiz question ────────────────────────────────
+      function renderQuestion() {
+        const q = QUIZ_QUESTIONS[currentQuestion];
+
+        quizProgress.textContent = 'QUESTION ' + (currentQuestion + 1) + ' OF ' + QUIZ_QUESTIONS.length;
+        quizQuestionText.textContent = q.question;
+
+        quizOptionsEl.className = 'quiz-options ' + q.layout;
+        quizOptionsEl.innerHTML = '';
+
+        q.options.forEach((opt, i) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'quiz-option' + (quizSelections[currentQuestion] === i ? ' selected' : '');
+          btn.innerHTML = iconSvg(opt.icon) +
+            '<span class="quiz-option-text">' +
+              '<span class="quiz-option-title">' + opt.label + '</span>' +
+              (opt.desc ? '<span class="quiz-option-desc">' + opt.desc + '</span>' : '') +
+            '</span>';
+          btn.addEventListener('click', () => {
+            quizSelections[currentQuestion] = i;
+            renderQuestion();
+          });
+          quizOptionsEl.appendChild(btn);
         });
+
+        quizBackBtn.disabled = currentQuestion === 0;
+        continueBtn.disabled = quizSelections[currentQuestion] === null;
+        continueBtn.textContent = currentQuestion === QUIZ_QUESTIONS.length - 1 ? 'Continue to Payment →' : 'Continue →';
       }
 
       function getQuizAnswers() {
-        const inputs = document.querySelectorAll('.quiz-answer');
-        return Array.from(inputs).map((input, i) => ({
-          question: QUIZ_QUESTIONS[i].question,
-          answer: input.value.trim(),
+        return QUIZ_QUESTIONS.map((q, i) => ({
+          question: q.question,
+          answer: quizSelections[i] === null ? '' : q.options[quizSelections[i]].label,
         }));
       }
 
-      function validateQuiz() {
-        const inputs = document.querySelectorAll('.quiz-answer');
-        for (const input of inputs) {
-          if (!input.value.trim()) {
-            return false;
-          }
-        }
-        return true;
-      }
-
-      // ─── Quiz Continue handler ───────────────────────────────────────
+      // ─── Quiz navigation ──────────────────────────────────────────────
       continueBtn.addEventListener('click', () => {
-        if (!validateQuiz()) {
-          quizResult.style.display = 'block';
-          quizResult.className = 'result error';
-          quizResult.textContent = 'Please answer all questions before continuing.';
-          return;
+        if (quizSelections[currentQuestion] === null) return;
+
+        if (currentQuestion < QUIZ_QUESTIONS.length - 1) {
+          currentQuestion += 1;
+          renderQuestion();
+        } else {
+          quizSection.classList.add('hidden');
+          paymentSection.classList.remove('hidden');
         }
-        quizResult.style.display = 'none';
-        quizSection.classList.add('hidden');
-        paymentSection.classList.remove('hidden');
+      });
+
+      quizBackBtn.addEventListener('click', () => {
+        if (currentQuestion > 0) {
+          currentQuestion -= 1;
+          renderQuestion();
+        }
+      });
+
+      quizSaveBtn.addEventListener('click', () => {
+        // Placeholder: no persistence backend wired up yet.
+        console.log('Quiz progress saved:', getQuizAnswers());
       });
 
       // ─── Payment helpers ─────────────────────────────────────────────
@@ -271,7 +446,7 @@
       });
 
       // ─── Init ────────────────────────────────────────────────────────
-      renderQuiz();
+      renderQuestion();
     </script>
   </body>
 </html>
