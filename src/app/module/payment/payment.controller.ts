@@ -38,12 +38,15 @@ export class PaymentController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create a Stripe PaymentIntent for one-time payment' })
+  @ApiBearerAuth('access-token')
   @ApiBody({ type: CreatePaymentDto })
   @ApiOkResponse({ type: CreatePaymentResponseDto })
+  @UseGuards(AuthGuard('user'))
   async createPaymentIntent(
     @Body() dto: CreatePaymentDto,
+    @Req() req: Request,
   ): Promise<CreatePaymentResponseDto> {
-    const data = await this.paymentService.createPaymentIntent(dto);
+    const data = await this.paymentService.createPaymentIntent(dto, req.user!.id);
     return {
       message: 'Payment intent created successfully',
       data,

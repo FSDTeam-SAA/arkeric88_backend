@@ -1,14 +1,14 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
   Body,
-  Param,
-  Req,
+  Controller,
+  Delete,
+  Get,
   HttpCode,
   HttpStatus,
+  Param,
+  Post,
+  Put,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -19,31 +19,29 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import type { Request } from 'express';
-import { HistoryService } from './history.service';
-import AuthGuard from 'src/app/middlewares/auth.guard';
 import pick from 'src/app/helpers/pick';
+import AuthGuard from 'src/app/middlewares/auth.guard';
 import { CreateHistoryDto } from './dto/create.history.dto';
+import { RequestSuggestedCitiesDto } from './dto/request-suggested-cities.dto';
+import { RequestTourPlanDto } from './dto/request-tour-plan.dto';
 import { UpdateHistoryDto } from './dto/update.history.dto';
+import { HistoryService } from './history.service';
 
 @ApiTags('History')
 @Controller('history')
 export class HistoryController {
   constructor(private readonly historyService: HistoryService) {}
 
-  // ─── Admin: Create a history record ───────────────────────────────────────
-  // Typically called by your AI team / backend webhook after analysis is done
-
   @Post()
   @ApiOperation({
-    summary: 'Create a history record (admin / AI team)',
+    summary: 'Create a history record',
     description:
-      'Called after the AI analysis is complete. Stores the full AI-generated travel recommendation along with payment and user profile data.',
+      'Stores a complete history record directly when the caller already has the final analysis payload.',
   })
   @ApiBearerAuth('access-token')
   @UseGuards(AuthGuard('user'))
   @HttpCode(HttpStatus.CREATED)
   async createHistory(@Body() createHistoryDto: CreateHistoryDto, @Req() req: Request) {
-    console.log(req.user!.id);
     const result = await this.historyService.createHistory(createHistoryDto, req.user!.id);
     return {
       message: 'History created successfully',
@@ -51,13 +49,52 @@ export class HistoryController {
     };
   }
 
-  // ─── Admin: Get all history records (paginated + filterable) ──────────────
+  @Post('suggested-cities')
+  @ApiOperation({
+    summary: 'Run AI suggested city analysis after payment',
+    description:
+      'Validates the Stripe payment intent, calls the external AI suggested-city route, and stores the preview result in history.',
+  })
+  @ApiBearerAuth('access-token')
+  @UseGuards(AuthGuard('user'))
+  @HttpCode(HttpStatus.CREATED)
+  async generateSuggestedCities(
+    @Body() dto: RequestSuggestedCitiesDto,
+    @Req() req: Request,
+  ) {
+    const result = await this.historyService.generateSuggestedCities(dto, req.user!.id);
+    return {
+      message: 'Suggested cities generated successfully',
+      data: result,
+    };
+  }
+
+  @Post('tour-plan')
+  @ApiOperation({
+    summary: 'Get full AI tour plan for a selected city',
+    description:
+      'Calls the external AI tour-plan route using the stored session id and updates the matching history record with the full itinerary.',
+  })
+  @ApiBearerAuth('access-token')
+  @UseGuards(AuthGuard('user'))
+  @HttpCode(HttpStatus.OK)
+  async generateTourPlan(@Body() dto: RequestTourPlanDto, @Req() req: Request) {
+    const result = await this.historyService.generateTourPlan(dto, req.user!.id);
+    return {
+      message: 'Tour plan generated successfully',
+      data: result,
+    };
+  }
 
   @Get()
   @ApiOperation({ summary: 'Get all history records (admin)' })
   @ApiBearerAuth('access-token')
   @ApiQuery({ name: 'searchTerm', required: false, type: String })
-  @ApiQuery({ name: 'aiAnalysisStatus', required: false, enum: ['pending', 'completed', 'failed'] })
+  @ApiQuery({
+    name: 'aiAnalysisStatus',
+    required: false,
+    enum: ['pending', 'suggested_cities_ready', 'completed', 'failed'],
+  })
   @ApiQuery({ name: 'paymentStatus', required: false, enum: ['unpaid', 'paid', 'refunded'] })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
@@ -75,8 +112,6 @@ export class HistoryController {
       data: result.data,
     };
   }
-
-  // ─── Admin: Get all history records of a specific user ────────────────────
 
   @Get('user/:userId')
   @ApiOperation({ summary: 'Get history records for a specific user (admin)' })
@@ -97,8 +132,6 @@ export class HistoryController {
       data: result.data,
     };
   }
-
-  // ─── User: Get my own history (paginated) ─────────────────────────────────
 
   @Get('my')
   @ApiOperation({
@@ -121,8 +154,6 @@ export class HistoryController {
     };
   }
 
-  // ─── User: Get a single history record (own) ──────────────────────────────
-
   @Get('my/:id')
   @ApiOperation({ summary: 'Get a single history record of the authenticated user' })
   @ApiBearerAuth('access-token')
@@ -136,8 +167,6 @@ export class HistoryController {
       data: result,
     };
   }
-
-  // ─── Admin: Get single history record by id ───────────────────────────────
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a single history record by ID (admin)' })
@@ -153,13 +182,11 @@ export class HistoryController {
     };
   }
 
-  // ─── Admin: Update history record (AI pushes analysis result) ─────────────
-
   @Put(':id')
   @ApiOperation({
-    summary: 'Update a history record (admin / AI team)',
+    summary: 'Update a history record (admin)',
     description:
-      'Used by the AI team to push analysis results, update payment status, or patch any field.',
+      'Lets admins patch a history record, including payment status or stored AI output fields.',
   })
   @ApiBearerAuth('access-token')
   @UseGuards(AuthGuard('admin'))
@@ -175,8 +202,6 @@ export class HistoryController {
       data: result,
     };
   }
-
-  // ─── Admin: Delete history record ─────────────────────────────────────────
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a history record (admin)' })

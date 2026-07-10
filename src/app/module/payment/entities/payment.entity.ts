@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument } from 'mongoose';
+import { HydratedDocument, Types } from 'mongoose';
+import { User } from '../../user/entities/user.entity';
 
 export type PaymentDocument = HydratedDocument<Payment> & {
   createdAt: Date;
@@ -23,8 +24,29 @@ export enum PaymentCurrency {
   GBP = 'gbp',
 }
 
+export enum PaymentAnalysisStatus {
+  PENDING = 'pending',
+  PROCESSING = 'processing',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+  SKIPPED = 'skipped',
+}
+
+export class PaymentAnalysisRequest {
+  questions_answers?: Record<string, unknown>;
+  preferred_destinations?: string;
+  hope_of_this_trip?: string;
+}
+
 @Schema({ timestamps: true })
 export class Payment {
+  @Prop({
+    type: Types.ObjectId,
+    ref: User.name,
+    index: true,
+  })
+  user?: Types.ObjectId;
+
   @Prop({ required: true, min: 0.01 })
   amount: number;
 
@@ -69,6 +91,20 @@ export class Payment {
     _id: false,
   })
   quiz?: { question: string; answer: string }[];
+
+  @Prop({ type: Object })
+  analysisRequest?: PaymentAnalysisRequest;
+
+  @Prop({
+    type: String,
+    enum: PaymentAnalysisStatus,
+    default: PaymentAnalysisStatus.SKIPPED,
+    index: true,
+  })
+  analysisStatus: PaymentAnalysisStatus;
+
+  @Prop()
+  analysisError?: string;
 }
 
 export const PaymentSchema = SchemaFactory.createForClass(Payment);
