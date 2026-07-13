@@ -4,7 +4,7 @@ import { PaymentDocument } from "./entities/payment.entity";
 
 
 export interface IPaymentService {
-  createPaymentIntent(dto: CreatePaymentDto): Promise<PaymentIntentResponseDto>;
+  createPaymentIntent(dto: CreatePaymentDto, userId: string): Promise<PaymentIntentResponseDto>;
   handleStripeWebhook(payload: Buffer, signature: string): Promise<void>;
   findById(id: string): Promise<PaymentDocument | null>;
 }

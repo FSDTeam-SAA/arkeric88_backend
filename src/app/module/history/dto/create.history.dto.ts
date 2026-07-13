@@ -172,9 +172,12 @@ export class CreateHistoryDto {
   @IsString()
   astroInsight?: string;
 
-  @ApiPropertyOptional({ enum: ['pending', 'completed', 'failed'], example: 'pending' })
+  @ApiPropertyOptional({
+    enum: ['pending', 'suggested_cities_ready', 'completed', 'failed'],
+    example: 'pending',
+  })
   @IsOptional()
-  @IsEnum(['pending', 'completed', 'failed'])
+  @IsEnum(['pending', 'suggested_cities_ready', 'completed', 'failed'])
   aiAnalysisStatus?: string;
 
   @ApiProperty({ example: 999, description: 'Payment amount in USD cents (e.g. 999 = $9.99)' })

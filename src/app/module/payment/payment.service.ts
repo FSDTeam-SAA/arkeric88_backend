@@ -6,18 +6,23 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import Stripe from 'stripe';
 import config from 'src/app/config';
-import { Payment, PaymentDocument, PaymentStatus } from './entities/payment.entity';
-import { CreatePaymentDto } from './dto/create-payment.dto';
-import { IPaymentService } from './payment-service.interface';
-import { PaymentIntentResponseDto } from './dto/payment-response.dto';
 import pick, { IFilterParams } from 'src/app/helpers/pick';
 import paginationHelper, { IOptions } from 'src/app/helpers/pagenation';
 import sendMailer from 'src/app/helpers/sendMailer';
 import { createPaymentSuccessEmailTemplate } from 'src/app/helpers/template';
-// import config from '../../config';
+import { HistoryService } from '../history/history.service';
+import { CreatePaymentDto } from './dto/create-payment.dto';
+import { PaymentIntentResponseDto } from './dto/payment-response.dto';
+import { IPaymentService } from './payment-service.interface';
+import {
+  Payment,
+  PaymentAnalysisStatus,
+  PaymentDocument,
+  PaymentStatus,
+} from './entities/payment.entity';
 
 @Injectable()
 export class PaymentService implements IPaymentService {
@@ -27,6 +32,7 @@ export class PaymentService implements IPaymentService {
   constructor(
     @InjectModel(Payment.name)
     private readonly paymentModel: Model<PaymentDocument>,
+    private readonly historyService: HistoryService,
   ) {
     if (!config.stripe.secretKey) {
       throw new InternalServerErrorException('Stripe secret key is not configured');
@@ -38,11 +44,11 @@ export class PaymentService implements IPaymentService {
     });
   }
 
-  // ─── Public API ───────────────────────────────────────────────────────────
-
-  async createPaymentIntent(dto: CreatePaymentDto): Promise<PaymentIntentResponseDto> {
+  async createPaymentIntent(
+    dto: CreatePaymentDto,
+    userId: string,
+  ): Promise<PaymentIntentResponseDto> {
     const { amount, currency = 'usd', description, nameOnCard, email, country, zipCode } = dto;
-
     const stripeAmount = this.toStripeAmount(amount);
 
     const metadata: Record<string, string> = {};
@@ -62,7 +68,6 @@ export class PaymentService implements IPaymentService {
           automatic_payment_methods: { enabled: true },
         },
         {
-          // Idempotency key prevents duplicate charges on retries
           idempotencyKey: `pi_${currency}_${stripeAmount}_${Date.now()}`,
         },
       );
@@ -74,6 +79,7 @@ export class PaymentService implements IPaymentService {
     const paymentId = await this.generateUniquePaymentId();
 
     const payment = await this.paymentModel.create({
+      user: this.toObjectId(userId),
       amount,
       currency,
       description,
@@ -86,6 +92,16 @@ export class PaymentService implements IPaymentService {
       status: PaymentStatus.PENDING,
       paymentMethod: 'card',
       quiz: dto.quiz ?? [],
+      analysisRequest: dto.questions_answers
+        ? {
+            questions_answers: dto.questions_answers,
+            preferred_destinations: dto.preferred_destinations,
+            hope_of_this_trip: dto.hope_of_this_trip,
+          }
+        : undefined,
+      analysisStatus: dto.questions_answers
+        ? PaymentAnalysisStatus.PENDING
+        : PaymentAnalysisStatus.SKIPPED,
     });
 
     this.logger.log(`PaymentIntent created: ${paymentIntent.id} | DB: ${payment._id}`);
@@ -115,6 +131,7 @@ export class PaymentService implements IPaymentService {
     const event = this.constructWebhookEvent(payload, signature);
     await this.processWebhookEvent(event);
   }
+
   async findAll(
     params: IFilterParams = {},
     options: IOptions = {},
@@ -183,8 +200,6 @@ export class PaymentService implements IPaymentService {
     return payment;
   }
 
-  // ─── Private helpers ──────────────────────────────────────────────────────
-
   private constructWebhookEvent(payload: Buffer, signature: string): Stripe.Event {
     const webhookSecret = config.stripe.webhookSecret;
     if (!webhookSecret) {
@@ -192,11 +207,7 @@ export class PaymentService implements IPaymentService {
     }
 
     try {
-      return this.stripe.webhooks.constructEvent(
-        payload,
-        signature,
-        webhookSecret,
-      );
+      return this.stripe.webhooks.constructEvent(payload, signature, webhookSecret);
     } catch (err) {
       this.logger.warn(`Webhook signature verification failed: ${(err as Error).message}`);
       throw new BadRequestException('Invalid webhook signature');
@@ -204,13 +215,13 @@ export class PaymentService implements IPaymentService {
   }
 
   private async processWebhookEvent(event: Stripe.Event): Promise<void> {
-    const HANDLED_EVENTS: Record<string, PaymentStatus> = {
+    const handledEvents: Record<string, PaymentStatus> = {
       'payment_intent.succeeded': PaymentStatus.SUCCEEDED,
       'payment_intent.payment_failed': PaymentStatus.FAILED,
       'payment_intent.canceled': PaymentStatus.CANCELED,
     };
 
-    const newStatus = HANDLED_EVENTS[event.type];
+    const newStatus = handledEvents[event.type];
 
     if (!newStatus) {
       this.logger.debug(`Unhandled webhook event type: ${event.type}`);
@@ -240,20 +251,21 @@ export class PaymentService implements IPaymentService {
       return;
     }
 
-    if (payment.status === status) {
+    if (payment.status === status && !this.shouldRetryAutoAnalysis(payment, status)) {
       this.logger.debug(`Payment ${payment._id} already has status "${status}", skipping`);
       return;
     }
 
     const previousStatus = payment.status;
-    payment.status = status;
-    await payment.save();
-
-    this.logger.log(
-      `Payment ${payment._id} status updated: ${previousStatus} → ${status}`,
-    );
+    if (payment.status !== status) {
+      payment.status = status;
+      await payment.save();
+      this.logger.log(`Payment ${payment._id} status updated: ${previousStatus} -> ${status}`);
+    }
 
     if (status === PaymentStatus.SUCCEEDED) {
+      await this.runAutoSuggestedCityAnalysis(payment);
+
       const html = createPaymentSuccessEmailTemplate({
         paymentId: payment.paymentId,
         amount: payment.amount,
@@ -267,16 +279,74 @@ export class PaymentService implements IPaymentService {
       });
 
       try {
-        await sendMailer(
-          "mahabur1814031@gmail.com",
-          'Payment Confirmation',
-          html,
-        );
-        
+        await sendMailer('mahabur1814031@gmail.com', 'Payment Confirmation', html);
         this.logger.log(`Payment confirmation email sent to ${payment.email}`);
       } catch (error) {
-        this.logger.warn(`Failed to send payment confirmation email to ${payment.email}: ${(error as Error).message}`);
+        this.logger.warn(
+          `Failed to send payment confirmation email to ${payment.email}: ${
+            (error as Error).message
+          }`,
+        );
       }
+    }
+  }
+
+  private shouldRetryAutoAnalysis(
+    payment: PaymentDocument,
+    status: PaymentStatus,
+  ): boolean {
+    return (
+      status === PaymentStatus.SUCCEEDED &&
+      Boolean(payment.user) &&
+      Boolean(payment.analysisRequest?.questions_answers) &&
+      [PaymentAnalysisStatus.PENDING, PaymentAnalysisStatus.FAILED].includes(
+        payment.analysisStatus,
+      )
+    );
+  }
+
+  private async runAutoSuggestedCityAnalysis(payment: PaymentDocument): Promise<void> {
+    if (!payment.user || !payment.analysisRequest?.questions_answers) {
+      this.logger.debug(
+        `Skipping auto AI trigger for payment ${payment._id}: missing user or questionnaire data`,
+      );
+
+      if (payment.analysisStatus !== PaymentAnalysisStatus.SKIPPED) {
+        payment.analysisStatus = PaymentAnalysisStatus.SKIPPED;
+        payment.analysisError = 'Missing user or questionnaire data for auto analysis';
+        await payment.save();
+      }
+
+      return;
+    }
+
+    if (
+      ![PaymentAnalysisStatus.PENDING, PaymentAnalysisStatus.FAILED].includes(
+        payment.analysisStatus,
+      )
+    ) {
+      return;
+    }
+
+    payment.analysisStatus = PaymentAnalysisStatus.PROCESSING;
+    payment.analysisError = undefined;
+    await payment.save();
+
+    try {
+      await this.historyService.generateSuggestedCitiesFromPayment(payment);
+      payment.analysisStatus = PaymentAnalysisStatus.COMPLETED;
+      await payment.save();
+      this.logger.log(`Auto suggested-city analysis completed for payment ${payment._id}`);
+    } catch (error) {
+      payment.analysisStatus = PaymentAnalysisStatus.FAILED;
+      payment.analysisError =
+        error instanceof Error ? error.message : 'Suggested city analysis failed';
+      await payment.save();
+      this.logger.error(
+        `Auto suggested-city analysis failed for payment ${payment._id}`,
+        error as Error,
+      );
+      throw error;
     }
   }
 
@@ -291,14 +361,23 @@ export class PaymentService implements IPaymentService {
       }
     }
 
-    throw new InternalServerErrorException('Unable to generate a unique payment identifier. Please try again.');
+    throw new InternalServerErrorException(
+      'Unable to generate a unique payment identifier. Please try again.',
+    );
   }
 
-  /** Convert major unit (e.g. 49.99 USD) to Stripe's minor unit (cents) */
   private toStripeAmount(amount: number): number {
     if (!amount || amount <= 0) {
       throw new BadRequestException('Payment amount must be greater than zero');
     }
     return Math.round(amount * 100);
+  }
+
+  private toObjectId(id: string): Types.ObjectId {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid user ID');
+    }
+
+    return new Types.ObjectId(id);
   }
 }
