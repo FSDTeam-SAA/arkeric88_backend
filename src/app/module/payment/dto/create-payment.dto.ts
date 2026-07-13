@@ -2,6 +2,7 @@ import {
   IsNotEmpty,
   IsEmail,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   IsEnum,
@@ -86,4 +87,27 @@ export class CreatePaymentDto {
   @ValidateNested({ each: true })
   @Type(() => QuizItemDto)
   quiz?: QuizItemDto[];
+
+  @ApiPropertyOptional({
+    description: 'Answers collected from the travel questionnaire.',
+    example: {
+      todays_feeling: 'Overwhelmed',
+      experience_kind: 'Deep',
+      energy_level: 'Low',
+      trip_length_days: 5,
+    },
+  })
+  @IsOptional()
+  @IsObject()
+  questions_answers?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ example: 'europe' })
+  @IsOptional()
+  @IsString()
+  preferred_destinations?: string;
+
+  @ApiPropertyOptional({ example: 'refreshment' })
+  @IsOptional()
+  @IsString()
+  hope_of_this_trip?: string;
 }

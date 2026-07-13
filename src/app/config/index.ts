@@ -41,6 +41,15 @@ export default {
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
     paymentMethodConfig: process.env.STRIPE_PAYMENT_METHOD_CONFIG,
   },
+  ai: {
+    suggestedCityUrl:
+      process.env.AI_SUGGESTED_CITY_URL ||
+      'https://arkeric88.onrender.com/get_suggested_city',
+    tourPlanUrl:
+      process.env.AI_TOUR_PLAN_URL ||
+      'https://arkeric88.onrender.com/get_tour_plan',
+    timeoutMs: Number(process.env.AI_REQUEST_TIMEOUT_MS || 60000),
+  },
   twilio: {
     accountSid: process.env.TWILIO_ACCOUNT_SID,
     authToken: process.env.TWILIO_AUTH_TOKEN,

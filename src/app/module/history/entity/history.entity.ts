@@ -4,8 +4,6 @@ import { User } from '../../user/entities/user.entity';
 
 export type HistoryDocument = HydratedDocument<HistoryRecord>;
 
-// ─── Nested plain classes (no @Schema decorator needed for sub-docs) ──────────
-
 export class TravelMatch {
   rank: number;
   destination: string;
@@ -41,20 +39,67 @@ export class UserProfile {
   preferredEnvironments: string[];
 }
 
-// ─── Main Schema ─────────────────────────────────────────────────────────────
+export class SuggestedCity {
+  cityName: string;
+  countryName: string;
+  cityImage: string[];
+  latitude: number;
+  longitude: number;
+  numberOfDays: number;
+  description: string;
+}
+
+export class Coordinates {
+  lat: number;
+  lng: number;
+}
+
+export class StayDetails {
+  name: string;
+  address: string;
+  rating?: number;
+  priceLevel?: string;
+  photos: string[];
+  coords?: Coordinates;
+}
+
+export class TourActivity {
+  activityName: string;
+  activityDescription: string;
+  activityLocation: string;
+  activityAddress: string;
+  activityImage: string[];
+  activityTime: string;
+  activityCost: number;
+  distanceFromPreviousKm?: number | null;
+}
+
+export class TourPlanDay {
+  day: number;
+  activities: TourActivity[];
+}
 
 @Schema({ timestamps: true, collection: 'histories' })
 export class HistoryRecord {
   @Prop({
     type: Types.ObjectId,
     ref: User.name,
-    required: true,
+    // required: true,
     index: true,
   })
   user: Types.ObjectId;
 
   @Prop({ type: Object, required: true })
   userProfile: UserProfile;
+
+  @Prop({ type: Object })
+  questionnaireAnswers?: Record<string, unknown>;
+
+  @Prop()
+  preferredDestinations?: string;
+
+  @Prop()
+  hopeOfThisTrip?: string;
 
   @Prop({ type: [String], default: [] })
   travelThemes: string[];
@@ -69,10 +114,46 @@ export class HistoryRecord {
   astroInsight?: string;
 
   @Prop({
-    enum: ['pending', 'completed', 'failed'],
+    enum: ['pending', 'suggested_cities_ready', 'completed', 'failed'],
     default: 'pending',
   })
   aiAnalysisStatus: string;
+
+  @Prop({ index: true, sparse: true })
+  aiSessionId?: string;
+
+  @Prop({ index: true, sparse: true })
+  activitySessionId?: string;
+
+  @Prop({ type: [Object], default: [] })
+  suggestedCities: SuggestedCity[];
+
+  @Prop()
+  selectedCity?: string;
+
+  @Prop({ type: Object })
+  stay?: StayDetails;
+
+  @Prop({ type: [Object], default: [] })
+  tourPlan: TourPlanDay[];
+
+  @Prop()
+  totalCostEstimate?: number;
+
+  @Prop()
+  packingTips?: string;
+
+  @Prop()
+  travelTips?: string;
+
+  @Prop()
+  source?: string;
+
+  @Prop({ type: Object })
+  suggestedCityResponse?: Record<string, unknown>;
+
+  @Prop({ type: Object })
+  tourPlanResponse?: Record<string, unknown>;
 
   @Prop({ required: true })
   paymentAmount: number;
@@ -92,7 +173,6 @@ export class HistoryRecord {
 
 export const HistorySchema = SchemaFactory.createForClass(HistoryRecord);
 
-// Indexes for common queries
 HistorySchema.index({ user: 1, createdAt: -1 });
 HistorySchema.index({ paymentStatus: 1 });
 HistorySchema.index({ aiAnalysisStatus: 1 });
