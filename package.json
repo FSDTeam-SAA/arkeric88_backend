@@ -50,7 +50,7 @@
     "stripe": "^21.0.1",
     "swagger-ui-express": "^5.0.1",
     "twilio": "^5.13.1",
-    "typeorm": "^1.0.0",
+    "typeorm": "^1.1.0",
     "ws": "^8.20.0",
     "zod": "^4.3.6"
   },
