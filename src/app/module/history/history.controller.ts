@@ -154,6 +154,36 @@ export class HistoryController {
     };
   }
 
+  @Get('by-payment/:paymentIntentId')
+  @ApiOperation({
+    summary: 'Get payment analysis/history for the authenticated user',
+    description:
+      'Used by the frontend after Stripe confirms payment. Returns payment status and the generated history once suggested cities are ready.',
+  })
+  @ApiBearerAuth('access-token')
+  @ApiParam({
+    name: 'paymentIntentId',
+    required: true,
+    type: String,
+    description: 'Stripe PaymentIntent ID',
+  })
+  @UseGuards(AuthGuard('user'))
+  @HttpCode(HttpStatus.OK)
+  async getMyHistoryByPaymentIntent(
+    @Param('paymentIntentId') paymentIntentId: string,
+    @Req() req: Request,
+  ) {
+    const result = await this.historyService.getMyHistoryByPaymentIntent(
+      paymentIntentId,
+      req.user!.id,
+    );
+
+    return {
+      message: 'Payment history fetched successfully',
+      data: result,
+    };
+  }
+
   @Get('my/:id')
   @ApiOperation({ summary: 'Get a single history record of the authenticated user' })
   @ApiBearerAuth('access-token')

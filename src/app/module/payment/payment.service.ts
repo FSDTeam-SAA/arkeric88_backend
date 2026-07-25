@@ -278,14 +278,20 @@ export class PaymentService implements IPaymentService {
         paymentDate: new Date(payment.updatedAt ?? payment.createdAt).toISOString(),
       });
 
-      try {
-        await sendMailer('mahabur1814031@gmail.com', 'Payment Confirmation', html);
-        this.logger.log(`Payment confirmation email sent to ${payment.email}`);
-      } catch (error) {
+      if (payment.email) {
+        try {
+          await sendMailer(payment.email, 'Payment Confirmation', html);
+          this.logger.log(`Payment confirmation email sent to ${payment.email}`);
+        } catch (error) {
+          this.logger.warn(
+            `Failed to send payment confirmation email to ${payment.email}: ${
+              (error as Error).message
+            }`,
+          );
+        }
+      } else {
         this.logger.warn(
-          `Failed to send payment confirmation email to ${payment.email}: ${
-            (error as Error).message
-          }`,
+          `Payment confirmation email skipped for ${payment.paymentId}: missing payer email`,
         );
       }
     }

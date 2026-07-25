@@ -307,6 +307,34 @@ export class HistoryService {
     return this.getUserHistory(userId, options);
   }
 
+  async getMyHistoryByPaymentIntent(paymentIntentId: string, userId: string) {
+    const userObjectId = this.toObjectId(userId, 'Invalid user ID');
+    const payment = await this.paymentModel.findOne({
+      user: userObjectId,
+      stripePaymentIntentId: paymentIntentId,
+    });
+
+    if (!payment) {
+      throw new HttpException('Payment not found for the authenticated user', 404);
+    }
+
+    const history = await this.historyModel.findOne({
+      user: userObjectId,
+      stripePaymentIntentId: paymentIntentId,
+    });
+
+    return {
+      payment: {
+        paymentId: payment.paymentId,
+        stripePaymentIntentId: payment.stripePaymentIntentId,
+        status: payment.status,
+        analysisStatus: payment.analysisStatus,
+        analysisError: payment.analysisError,
+      },
+      history,
+    };
+  }
+
   async getMySingleHistory(historyId: string, userId: string): Promise<HistoryDocument> {
     this.ensureValidObjectId(historyId, 'Invalid history ID');
 

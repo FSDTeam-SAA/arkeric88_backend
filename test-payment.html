@@ -23,6 +23,9 @@
       .result{margin-top:14px;padding:10px;border-radius:6px}
       .success{background:#e6faf0;border:1px solid #b6f0cf;color:#064}
       .error{background:#fff1f1;border:1px solid #f2c2c2;color:#900}
+      .city-list{margin-top:10px;display:grid;gap:8px}
+      .city-button{margin-top:0;text-align:left;background:#fff;color:#263026;border:1px solid #b6f0cf}
+      .city-meta{display:block;font-size:12px;color:#667;margin-top:4px}
       .hidden{display:none !important}
 
       /* ─── QUIZ (Velari-style multi-step) ───────────────────────────── */
@@ -136,6 +139,10 @@
           <input id="backendUrl" type="text" value="http://localhost:5000/api/v1" />
         </label>
 
+        <label>Access token
+          <input id="accessToken" type="text" placeholder="Paste token from Swagger without Bearer" />
+        </label>
+
         <label>Amount (major unit, e.g. 2.50)
           <input id="amount" type="number" step="0.01" value="2.00" />
         </label>
@@ -146,6 +153,10 @@
 
         <label>Name on Card
           <input id="nameOnCard" type="text" value="John Doe" />
+        </label>
+
+        <label>Email
+          <input id="email" type="text" value="john@example.com" />
         </label>
 
         <div class="row">
@@ -170,6 +181,7 @@
         <div class="muted">Test cards: <strong>4242 4242 4242 4242</strong> — any future expiry, any CVC (e.g. 123).</div>
 
         <div id="result" class="result" style="display:none"></div>
+        <div id="citiesResult" class="result" style="display:none"></div>
       </div>
     </div>
 
@@ -258,16 +270,20 @@
 
       const payButton = document.getElementById('pay');
       const backendInput = document.getElementById('backendUrl');
+      const accessTokenInput = document.getElementById('accessToken');
       const amountInput = document.getElementById('amount');
       const descInput = document.getElementById('description');
       const nameInput = document.getElementById('nameOnCard');
+      const emailInput = document.getElementById('email');
       const countryInput = document.getElementById('country');
       const zipInput = document.getElementById('zipCode');
       const resultEl = document.getElementById('result');
+      const citiesResultEl = document.getElementById('citiesResult');
 
       let stripe = null;
       let card = null;
       let clientSecret = null;
+      let paymentIntentId = null;
       let paymentIntentCreated = false;
 
       let currentQuestion = 0;
@@ -311,6 +327,23 @@
         }));
       }
 
+      function getQuestionnaireAnswers() {
+        const answers = getQuizAnswers();
+        return {
+          todays_feeling: answers[0].answer,
+          experience_kind: answers[1].answer,
+          energy_level: answers[2].answer,
+          travel_style: answers[3].answer,
+          trip_organization: 'Balanced',
+          activity_restrictions: ['Intense hiking or climbing'],
+          life_season: 'Building',
+          preferred_environments: ['Nature', 'Ocean'],
+          birthdate: '1995-06-15',
+          total_trip_budget: 2000,
+          trip_length_days: 5,
+        };
+      }
+
       // ─── Quiz navigation ──────────────────────────────────────────────
       continueBtn.addEventListener('click', () => {
         if (quizSelections[currentQuestion] === null) return;
@@ -348,6 +381,17 @@
         resultEl.textContent = '';
       }
 
+      function getAuthToken() {
+        const rawToken = accessTokenInput.value.trim();
+        const token = rawToken.replace(/^Bearer\s+/i, '');
+
+        if (!token) {
+          throw new Error('Access token is required. Paste your login token from Swagger.');
+        }
+
+        return token;
+      }
+
       function mountCardElement(publishableKey) {
         if (stripe && card) return;
         stripe = Stripe(publishableKey);
@@ -361,20 +405,30 @@
         payButton.disabled = true;
         const backend = backendInput.value.replace(/\/$/, '');
         const quizData = getQuizAnswers();
+        const questionsAnswers = getQuestionnaireAnswers();
         const payload = {
           amount: parseFloat(amountInput.value || '0'),
           currency: 'usd',
           description: descInput.value,
           nameOnCard: nameInput.value,
+          email: emailInput.value,
           country: countryInput.value,
           zipCode: zipInput.value,
           quiz: quizData,
+          questions_answers: questionsAnswers,
+          preferred_destinations: 'europe',
+          hope_of_this_trip: questionsAnswers.experience_kind,
         };
 
         try {
+          const token = getAuthToken();
+
           const r = await fetch(backend + '/payments', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ' + token,
+            },
             body: JSON.stringify(payload),
           });
 
@@ -387,6 +441,7 @@
 
           const data = json.data || json;
           clientSecret = data.clientSecret || data.client_secret;
+          paymentIntentId = data.paymentIntentId || data.payment_intent_id;
           const publishableKey = data.publishableKey || data.publishable_key || data.publishable_key;
 
           if (!clientSecret || !publishableKey) {
@@ -421,10 +476,11 @@
             showResult('Payment failed: ' + error.message, false);
           } else if (paymentIntent && paymentIntent.status === 'succeeded') {
             console.log('Payment succeeded:', paymentIntent);
-            showResult('Payment successful — status: ' + paymentIntent.status, true);
+            showResult('Payment successful. Preparing suggested cities...', true);
             payButton.textContent = 'Pay Now';
             paymentIntentCreated = false;
             clientSecret = null;
+            await pollSuggestedCities(paymentIntent.id || paymentIntentId);
           } else {
             showResult('Payment status: ' + (paymentIntent && paymentIntent.status), false);
           }
@@ -434,6 +490,121 @@
         } finally {
           payButton.disabled = false;
         }
+      }
+
+      function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      function showCitiesMessage(message, ok = true) {
+        citiesResultEl.style.display = 'block';
+        citiesResultEl.className = 'result ' + (ok ? 'success' : 'error');
+        citiesResultEl.textContent = message;
+      }
+
+      async function pollSuggestedCities(intentId) {
+        if (!intentId) {
+          showCitiesMessage('Missing payment intent id. Cannot fetch suggested cities.', false);
+          return;
+        }
+
+        const backend = backendInput.value.replace(/\/$/, '');
+        const token = getAuthToken();
+
+        for (let attempt = 1; attempt <= 30; attempt += 1) {
+          const r = await fetch(backend + '/history/by-payment/' + encodeURIComponent(intentId), {
+            headers: { 'Authorization': 'Bearer ' + token },
+          });
+          const json = await r.json();
+
+          if (!r.ok) {
+            showCitiesMessage((json && json.message) || 'Waiting for payment history...', false);
+            await sleep(3000);
+            continue;
+          }
+
+          const data = json.data || {};
+          const payment = data.payment || {};
+          const history = data.history;
+
+          if (history && history.aiAnalysisStatus === 'suggested_cities_ready') {
+            renderSuggestedCities(history);
+            return;
+          }
+
+          if (payment.analysisStatus === 'failed') {
+            showCitiesMessage(payment.analysisError || 'Suggested city analysis failed.', false);
+            return;
+          }
+
+          showCitiesMessage(
+            'Waiting for suggested cities... payment: ' +
+              payment.status +
+              ', analysis: ' +
+              payment.analysisStatus,
+            true,
+          );
+          await sleep(3000);
+        }
+
+        showCitiesMessage('Still waiting for suggested cities. Check webhook and AI logs.', false);
+      }
+
+      function renderSuggestedCities(history) {
+        const cities = Array.isArray(history.suggestedCities) ? history.suggestedCities : [];
+        citiesResultEl.style.display = 'block';
+        citiesResultEl.className = 'result success';
+        citiesResultEl.innerHTML = '';
+
+        const title = document.createElement('div');
+        title.textContent = 'Suggested cities are ready. Choose one:';
+        citiesResultEl.appendChild(title);
+
+        const list = document.createElement('div');
+        list.className = 'city-list';
+        citiesResultEl.appendChild(list);
+
+        cities.forEach((city) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'city-button';
+          btn.textContent = city.cityName + (city.countryName ? ', ' + city.countryName : '');
+
+          const meta = document.createElement('span');
+          meta.className = 'city-meta';
+          meta.textContent = city.numberOfDays ? city.numberOfDays + ' days' : 'Tap to get full tour plan';
+          btn.appendChild(meta);
+
+          btn.addEventListener('click', () => requestTourPlan(history.aiSessionId, city.cityName));
+          list.appendChild(btn);
+        });
+      }
+
+      async function requestTourPlan(sessionId, selectedCity) {
+        const backend = backendInput.value.replace(/\/$/, '');
+        const token = getAuthToken();
+        showCitiesMessage('Creating full tour plan for ' + selectedCity + '...', true);
+
+        const r = await fetch(backend + '/history/tour-plan', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token,
+          },
+          body: JSON.stringify({
+            session_id: sessionId,
+            selected_city: selectedCity,
+          }),
+        });
+
+        const json = await r.json();
+        if (!r.ok) {
+          showCitiesMessage((json && json.message) || 'Failed to create tour plan.', false);
+          return;
+        }
+
+        console.log('Tour plan response:', json);
+        showCitiesMessage('Full tour plan created for ' + selectedCity + '. Check console/history response.', true);
       }
 
       payButton.addEventListener('click', (e) => {
