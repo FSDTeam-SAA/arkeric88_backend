@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   Body,
   HttpCode,
@@ -23,6 +24,18 @@ import { UpdatePriceDto } from './dto/price-update.dto';
 @Controller('price')
 export class PriceController {
   constructor(private readonly priceService: PriceService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'Get current price' })
+  @HttpCode(HttpStatus.OK)
+  async getPrice() {
+    const result = await this.priceService.getPrice();
+
+    return {
+      message: 'Price retrieved successfully',
+      data: result,
+    };
+  }
 
   @Post()
   @ApiOperation({ summary: 'Create price' })
