@@ -12,6 +12,19 @@ export class PriceService {
     private readonly priceModel: Model<PriceDocument>,
   ) {}
 
+  async getPrice() {
+    const price = await this.priceModel
+      .findOne()
+      .sort({ createdAt: -1 })
+      .exec();
+
+    if (!price) {
+      throw new HttpException('Price not found', 404);
+    }
+
+    return price;
+  }
+
   async createPrice(createPriceDto: CreatePriceDto) {
     if (!createPriceDto.price) {
       throw new HttpException('Price is required', 400);
