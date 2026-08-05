@@ -192,6 +192,18 @@ export class HistoryService {
       throw new HttpException('History session not found', 404);
     }
 
+    const requestedCity = dto.selected_city.trim().toLocaleLowerCase();
+    const storedCity = history.selectedCity?.trim().toLocaleLowerCase();
+    if (storedCity === requestedCity && history.tourPlan?.length) {
+      return {
+        history,
+        aiResponse: history.tourPlanResponse ?? {
+          source: 'database-cache',
+          tour_plan: history.tourPlan,
+        },
+      };
+    }
+
     const aiResponse = (await this.historyAiClient.getTourPlan(dto)) as TourPlanApiResponse &
       Record<string, unknown>;
 
