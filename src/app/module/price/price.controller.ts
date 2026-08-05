@@ -41,14 +41,7 @@ export class PriceController {
   @ApiOperation({ summary: 'Create price' })
   @ApiBearerAuth('access-token')
   @UseGuards(AuthGuard('admin'))
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        price: { type: 'number', example: 100 },
-      },
-    },
-  })
+  @ApiBody({ type: CreatePriceDto })
   @HttpCode(HttpStatus.CREATED)
   async createPrice(@Body() createPriceDto: CreatePriceDto) {
     const result = await this.priceService.createPrice(createPriceDto);
