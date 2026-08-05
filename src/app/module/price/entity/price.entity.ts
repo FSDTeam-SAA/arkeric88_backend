@@ -10,6 +10,15 @@ export class Price {
     type: Number,
   })
   price: number;
+
+  @Prop({ enum: ['active', 'inactive'], default: 'active' })
+  status: string;
+
+  @Prop({ trim: true })
+  description?: string;
+
+  @Prop({ trim: true })
+  paymentCategory?: string;
 }
 
 export const PriceSchema = SchemaFactory.createForClass(Price);
