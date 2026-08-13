@@ -14,12 +14,12 @@ export class PriceService {
 
   async getPrice() {
     const price = await this.priceModel
-      .findOne()
+      .findOne({ status: 'active' })
       .sort({ createdAt: -1 })
       .exec();
 
     if (!price) {
-      throw new HttpException('Price not found', 404);
+      throw new HttpException('Active price not found', 404);
     }
 
     return price;
