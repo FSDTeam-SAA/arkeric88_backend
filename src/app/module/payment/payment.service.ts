@@ -14,6 +14,7 @@ import paginationHelper, { IOptions } from 'src/app/helpers/pagenation';
 import sendMailer from 'src/app/helpers/sendMailer';
 import { createPaymentSuccessEmailTemplate } from 'src/app/helpers/template';
 import { HistoryService } from '../history/history.service';
+import { normalizeQuestionnaireAnswers } from '../history/wellness-archetypes';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { PaymentIntentResponseDto } from './dto/payment-response.dto';
 import { IPaymentService } from './payment-service.interface';
@@ -49,6 +50,9 @@ export class PaymentService implements IPaymentService {
     userId: string,
   ): Promise<PaymentIntentResponseDto> {
     const { amount, currency = 'usd', description, nameOnCard, email, country, zipCode } = dto;
+    const normalizedQuestionsAnswers = dto.questions_answers
+      ? normalizeQuestionnaireAnswers(dto.questions_answers)
+      : undefined;
     const stripeAmount = this.toStripeAmount(amount);
 
     const metadata: Record<string, string> = {};
@@ -92,14 +96,14 @@ export class PaymentService implements IPaymentService {
       status: PaymentStatus.PENDING,
       paymentMethod: 'card',
       quiz: dto.quiz ?? [],
-      analysisRequest: dto.questions_answers
+      analysisRequest: normalizedQuestionsAnswers
         ? {
-            questions_answers: dto.questions_answers,
+            questions_answers: normalizedQuestionsAnswers,
             preferred_destinations: dto.preferred_destinations,
             hope_of_this_trip: dto.hope_of_this_trip,
           }
         : undefined,
-      analysisStatus: dto.questions_answers
+      analysisStatus: normalizedQuestionsAnswers
         ? PaymentAnalysisStatus.PENDING
         : PaymentAnalysisStatus.SKIPPED,
     });

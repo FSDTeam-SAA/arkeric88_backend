@@ -10,13 +10,17 @@ export class RequestSuggestedCitiesDto {
   @ApiProperty({
     description: 'Answers collected from the frontend questionnaire flow.',
     example: {
-      todays_feeling: 'Overwhelmed',
-      experience_kind: 'Deep',
+      selected_archetype: 'burned_out_achiever',
+      archetype_answers: {
+        burnout_recovery_priority: 'Restorative sleep',
+        burnout_current_pressure: 'I am always switched on',
+        burnout_support_style: 'Private and self-paced',
+        burnout_social_boundary: 'As little as possible',
+      },
       energy_level: 'Low',
       travel_style: 'Couple (An intimate shared experience)',
       trip_organization: 'Loosely planned',
       activity_restrictions: ['Intense hiking or climbing'],
-      life_season: 'Building',
       preferred_environments: ['Mountains', 'Nature', 'Ocean'],
       birthdate: '2003-07-04',
       total_trip_budget: 10000,

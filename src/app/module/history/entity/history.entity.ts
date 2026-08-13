@@ -28,6 +28,8 @@ export class RecommendedJourney {
 }
 
 export class UserProfile {
+  wellnessArchetype: string;
+  wellnessNeeds: string[];
   zodiacSign: string;
   currentEnergy: string;
   emotionalState: string;

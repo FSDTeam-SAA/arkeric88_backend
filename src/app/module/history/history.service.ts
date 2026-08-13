@@ -28,6 +28,7 @@ import {
   UserProfile,
 } from './entity/history.entity';
 import { HistoryAiClient } from './history-ai.client';
+import { normalizeQuestionnaireAnswers } from './wellness-archetypes';
 
 const historySearchableFields = [
   'aiAnalysisStatus',
@@ -103,10 +104,14 @@ export class HistoryService {
   ): Promise<{ history: HistoryDocument; aiResponse: Record<string, unknown> }> {
     const userObjectId = this.toObjectId(userId, 'Invalid user ID');
     const payment = await this.findPaidPayment(dto.payment_intent_id);
+    const normalizedDto = {
+      ...dto,
+      questions_answers: normalizeQuestionnaireAnswers(dto.questions_answers),
+    };
     const aiResponse = await this.historyAiClient.getSuggestedCities({
-      questions_answers: dto.questions_answers,
-      preferred_destinations: dto.preferred_destinations,
-      hope_of_this_trip: dto.hope_of_this_trip,
+      questions_answers: normalizedDto.questions_answers,
+      preferred_destinations: normalizedDto.preferred_destinations,
+      hope_of_this_trip: normalizedDto.hope_of_this_trip,
     });
 
     const aiSessionId = this.asOptionalString(aiResponse?.session_id);
@@ -116,11 +121,11 @@ export class HistoryService {
 
     const historyData = {
       user: userObjectId,
-      userProfile: this.buildUserProfile(dto),
-      questionnaireAnswers: dto.questions_answers,
-      preferredDestinations: dto.preferred_destinations,
-      hopeOfThisTrip: dto.hope_of_this_trip,
-      travelThemes: this.buildTravelThemes(dto),
+      userProfile: this.buildUserProfile(normalizedDto),
+      questionnaireAnswers: normalizedDto.questions_answers,
+      preferredDestinations: normalizedDto.preferred_destinations,
+      hopeOfThisTrip: normalizedDto.hope_of_this_trip,
+      travelThemes: this.buildTravelThemes(normalizedDto),
       aiSessionId,
       suggestedCities: this.extractSuggestedCities(aiResponse),
       suggestedCityResponse: aiResponse,
@@ -464,8 +469,11 @@ export class HistoryService {
 
   private buildUserProfile(dto: RequestSuggestedCitiesDto): UserProfile {
     const answers = dto.questions_answers || {};
+    const archetypeProfile = this.asRecord(answers.archetype_profile);
 
     return {
+      wellnessArchetype: this.asOptionalString(answers.selected_archetype) || '',
+      wellnessNeeds: this.asStringArray(archetypeProfile?.needs),
       zodiacSign: this.getZodiacSign(this.asOptionalString(answers.birthdate)),
       currentEnergy: this.asOptionalString(answers.energy_level) || '',
       emotionalState: this.asOptionalString(answers.todays_feeling) || '',
@@ -485,7 +493,10 @@ export class HistoryService {
 
   private buildTravelThemes(dto: RequestSuggestedCitiesDto): string[] {
     const answers = dto.questions_answers || {};
+    const archetypeProfile = this.asRecord(answers.archetype_profile);
     const themes = [
+      this.asOptionalString(answers.selected_archetype),
+      ...this.asStringArray(archetypeProfile?.needs),
       ...this.asStringArray(answers.preferred_environments),
       dto.preferred_destinations,
       dto.hope_of_this_trip,
@@ -560,6 +571,12 @@ export class HistoryService {
     return value
       .map((item) => this.asOptionalString(item))
       .filter((item): item is string => Boolean(item));
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> | undefined {
+    return value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined;
   }
 
   private asOptionalString(value: unknown): string | undefined {

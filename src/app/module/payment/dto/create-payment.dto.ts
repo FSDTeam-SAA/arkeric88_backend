@@ -91,8 +91,13 @@ export class CreatePaymentDto {
   @ApiPropertyOptional({
     description: 'Answers collected from the travel questionnaire.',
     example: {
-      todays_feeling: 'Overwhelmed',
-      experience_kind: 'Deep',
+      selected_archetype: 'burned_out_achiever',
+      archetype_answers: {
+        burnout_recovery_priority: 'Restorative sleep',
+        burnout_current_pressure: 'I am always switched on',
+        burnout_support_style: 'Private and self-paced',
+        burnout_social_boundary: 'As little as possible',
+      },
       energy_level: 'Low',
       trip_length_days: 5,
     },
