@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   HttpException,
   Injectable,
   InternalServerErrorException,
@@ -17,7 +16,6 @@ import {
 import { CreateHistoryDto } from './dto/create.history.dto';
 import { RequestSuggestedCitiesDto } from './dto/request-suggested-cities.dto';
 import { RequestTourPlanDto } from './dto/request-tour-plan.dto';
-import { RequestRetreatRecommendationsDto } from './dto/retreat-v2.dto';
 import { UpdateHistoryDto } from './dto/update.history.dto';
 import {
   Coordinates,
@@ -26,9 +24,6 @@ import {
   RecommendedJourney,
   StayDetails,
   SuggestedCity,
-  RetreatRecommendation,
-  RetreatScoreBreakdown,
-  ExtractedRestrictions,
   TourPlanDay,
   UserProfile,
 } from './entity/history.entity';
@@ -98,24 +93,15 @@ export class HistoryService {
     private readonly historyAiClient: HistoryAiClient,
   ) {}
 
-  async createHistory(
-    createHistoryDto: CreateHistoryDto,
-    userId: string,
-  ): Promise<HistoryDocument> {
+  async createHistory(createHistoryDto: CreateHistoryDto, userId: string): Promise<HistoryDocument> {
     const userObjectId = this.toObjectId(userId, 'Invalid user ID');
-    return this.historyModel.create({
-      ...createHistoryDto,
-      user: userObjectId,
-    });
+    return this.historyModel.create({ ...createHistoryDto, user: userObjectId });
   }
 
   async generateSuggestedCities(
     dto: RequestSuggestedCitiesDto,
     userId: string,
-  ): Promise<{
-    history: HistoryDocument;
-    aiResponse: Record<string, unknown>;
-  }> {
+  ): Promise<{ history: HistoryDocument; aiResponse: Record<string, unknown> }> {
     const userObjectId = this.toObjectId(userId, 'Invalid user ID');
     const payment = await this.findPaidPayment(dto.payment_intent_id);
     const normalizedDto = {
@@ -130,9 +116,7 @@ export class HistoryService {
 
     const aiSessionId = this.asOptionalString(aiResponse?.session_id);
     if (!aiSessionId) {
-      throw new InternalServerErrorException(
-        'AI response is missing session_id',
-      );
+      throw new InternalServerErrorException('AI response is missing session_id');
     }
 
     const historyData = {
@@ -171,19 +155,15 @@ export class HistoryService {
     };
   }
 
-  async generateSuggestedCitiesFromPayment(payment: PaymentDocument): Promise<{
-    history: HistoryDocument;
-    aiResponse: Record<string, unknown>;
-  }> {
+  async generateSuggestedCitiesFromPayment(
+    payment: PaymentDocument,
+  ): Promise<{ history: HistoryDocument; aiResponse: Record<string, unknown> }> {
     if (!payment.user) {
       throw new HttpException('Payment is missing user information', 400);
     }
 
     if (!payment.stripePaymentIntentId) {
-      throw new HttpException(
-        'Payment is missing Stripe payment intent id',
-        400,
-      );
+      throw new HttpException('Payment is missing Stripe payment intent id', 400);
     }
 
     const analysisRequest = payment.analysisRequest;
@@ -202,140 +182,15 @@ export class HistoryService {
     );
   }
 
-  async generateRetreatRecommendationsFromPayment(
-    payment: PaymentDocument,
-  ): Promise<{
-    history: HistoryDocument;
-    aiResponse: Record<string, unknown>;
-  }> {
-    if (!payment.user || !payment.stripePaymentIntentId) {
-      throw new HttpException(
-        'Payment is missing user or payment intent information',
-        400,
-      );
-    }
-
-    const questionnaire = payment.analysisRequest?.questionnaire;
-    if (!questionnaire) {
-      throw new HttpException(
-        'Payment is missing the v2 retreat questionnaire',
-        400,
-      );
-    }
-
-    const recommendationPayload =
-      this.buildRetreatRecommendationPayload(questionnaire);
-    const aiResponse = (await this.historyAiClient.getRetreatRecommendations(
-      recommendationPayload,
-    )) as Record<string, unknown>;
-    const recommendationSessionId = this.asOptionalString(
-      aiResponse.recommendation_session_id,
-    );
-
-    if (!recommendationSessionId) {
-      throw new InternalServerErrorException(
-        'Retreat recommendation response is missing recommendation_session_id',
-      );
-    }
-
-    const recommendations = this.extractRetreatRecommendations(aiResponse);
-    const historyData = {
-      user: payment.user,
-      userProfile: this.buildV2UserProfile(recommendationPayload),
-      questionnaireAnswers: recommendationPayload,
-      travelThemes: this.asStringArray(recommendationPayload.transform_focus),
-      recommendationSessionId,
-      schemaVersion: this.asOptionalString(aiResponse.schema_version),
-      scoringVersion: this.asOptionalString(aiResponse.scoring_version),
-      answerMappingVersion: this.asOptionalString(
-        aiResponse.answer_mapping_version,
-      ),
-      databaseVersion: this.asOptionalString(aiResponse.database_version),
-      retreatRecommendations: recommendations,
-      excludedCount: this.asOptionalNumber(aiResponse.excluded_count),
-      totalCandidateCount: this.asOptionalNumber(
-        aiResponse.total_candidate_count,
-      ),
-      extractedRestrictions: this.mapExtractedRestrictions(
-        aiResponse.extracted_restrictions,
-      ),
-      dataGaps: this.asStringArray(aiResponse.data_gaps),
-      suggestedCityResponse: aiResponse,
-      aiAnalysisStatus: 'suggested_cities_ready',
-      paymentAmount: payment.amount,
-      stripePaymentIntentId: payment.stripePaymentIntentId,
-      paymentStatus: 'paid',
-      paidAt: payment.updatedAt ?? payment.createdAt,
-    };
-
-    const existingHistory = await this.historyModel.findOne({
-      user: payment.user,
-      stripePaymentIntentId: payment.stripePaymentIntentId,
-    });
-    const history = existingHistory
-      ? await this.historyModel.findByIdAndUpdate(
-          existingHistory._id,
-          { $set: historyData },
-          { new: true },
-        )
-      : await this.historyModel.create(historyData);
-
-    return { history: history!, aiResponse };
-  }
-
-  async generateRetreatRecommendations(
-    dto: RequestRetreatRecommendationsDto,
-    userId: string,
-  ): Promise<{
-    history: HistoryDocument;
-    aiResponse: Record<string, unknown>;
-  }> {
-    const userObjectId = this.toObjectId(userId, 'Invalid user ID');
-    const payment = await this.paymentModel.findOne({
-      user: userObjectId,
-      stripePaymentIntentId: dto.payment_intent_id,
-    });
-
-    if (!payment) {
-      throw new HttpException(
-        'Payment not found for the authenticated user',
-        404,
-      );
-    }
-    if (payment.status !== PaymentStatus.SUCCEEDED) {
-      throw new HttpException(
-        'Payment has not completed successfully yet',
-        400,
-      );
-    }
-
-    payment.questionnaireVersion = 'v2';
-    const { payment_intent_id: _paymentIntentId, ...questionnaire } = dto;
-    payment.analysisRequest = {
-      ...(payment.analysisRequest || {}),
-      version: 'v2',
-      questionnaire: questionnaire as unknown as Record<string, unknown>,
-    };
-    await payment.save();
-
-    return this.generateRetreatRecommendationsFromPayment(payment);
-  }
-
   async generateTourPlan(
     dto: RequestTourPlanDto,
     userId: string,
-  ): Promise<{
-    history: HistoryDocument;
-    aiResponse: Record<string, unknown>;
-  }> {
+  ): Promise<{ history: HistoryDocument; aiResponse: Record<string, unknown> }> {
     const userObjectId = this.toObjectId(userId, 'Invalid user ID');
 
     const history = await this.historyModel.findOne({
       user: userObjectId,
-      $or: [
-        { aiSessionId: dto.session_id },
-        { recommendationSessionId: dto.session_id },
-      ],
+      aiSessionId: dto.session_id,
     });
 
     if (!history) {
@@ -343,26 +198,8 @@ export class HistoryService {
     }
 
     const requestedCity = dto.selected_city.trim().toLocaleLowerCase();
-    const selectedProperty = dto.property_id
-      ? history.retreatRecommendations?.find(
-          (item) => item.propertyId === dto.property_id,
-        )
-      : undefined;
-
-    if (dto.property_id && !selectedProperty) {
-      throw new HttpException(
-        'Selected retreat property was not found in this recommendation session',
-        400,
-      );
-    }
-
-    const selectedPropertyName = selectedProperty?.propertyName;
     const storedCity = history.selectedCity?.trim().toLocaleLowerCase();
-    if (
-      ((dto.property_id && history.selectedPropertyId === dto.property_id) ||
-        (!dto.property_id && storedCity === requestedCity)) &&
-      history.tourPlan?.length
-    ) {
+    if (storedCity === requestedCity && history.tourPlan?.length) {
       return {
         history,
         aiResponse: history.tourPlanResponse ?? {
@@ -372,10 +209,8 @@ export class HistoryService {
       };
     }
 
-    const aiResponse = (await this.historyAiClient.getTourPlan({
-      ...dto,
-      selected_city: selectedPropertyName || dto.selected_city,
-    })) as TourPlanApiResponse & Record<string, unknown>;
+    const aiResponse = (await this.historyAiClient.getTourPlan(dto)) as TourPlanApiResponse &
+      Record<string, unknown>;
 
     const stay = this.mapStay(aiResponse.stay);
     const tourPlan = this.mapTourPlan(aiResponse.tour_plan);
@@ -383,26 +218,17 @@ export class HistoryService {
       history._id,
       {
         $set: {
-          activitySessionId: this.asOptionalString(
-            aiResponse.activity_session_id,
-          ),
+          activitySessionId: this.asOptionalString(aiResponse.activity_session_id),
           selectedCity: dto.selected_city,
-          selectedPropertyId: dto.property_id,
           stay,
           tourPlan,
-          totalCostEstimate: this.asOptionalNumber(
-            aiResponse.total_cost_estimate,
-          ),
+          totalCostEstimate: this.asOptionalNumber(aiResponse.total_cost_estimate),
           packingTips: this.asOptionalString(aiResponse.packing_tips),
           travelTips: this.asOptionalString(aiResponse.travel_tips),
           source: this.asOptionalString(aiResponse.source),
           tourPlanResponse: aiResponse,
           aiAnalysisStatus: 'completed',
-          recommendedJourney: this.buildRecommendedJourney(
-            dto.selected_city,
-            stay,
-            tourPlan,
-          ),
+          recommendedJourney: this.buildRecommendedJourney(dto.selected_city, stay, tourPlan),
         },
       },
       { new: true },
@@ -416,10 +242,7 @@ export class HistoryService {
 
   async getAllHistory(params: IFilterParams, options: IOptions) {
     const { limit, page, skip, sortBy, sortOrder } = paginationHelper(options);
-    const whereConditions = buildWhereConditions(
-      params,
-      historySearchableFields,
-    );
+    const whereConditions = buildWhereConditions(params, historySearchableFields);
 
     const [total, data] = await Promise.all([
       this.historyModel.countDocuments(whereConditions),
@@ -465,10 +288,7 @@ export class HistoryService {
     return history;
   }
 
-  async updateHistory(
-    id: string,
-    updateHistoryDto: UpdateHistoryDto,
-  ): Promise<HistoryDocument> {
+  async updateHistory(id: string, updateHistoryDto: UpdateHistoryDto): Promise<HistoryDocument> {
     this.ensureValidObjectId(id, 'Invalid history ID');
 
     const history = await this.historyModel.findById(id);
@@ -476,12 +296,8 @@ export class HistoryService {
       throw new HttpException('History not found', 404);
     }
 
-    if (
-      updateHistoryDto.paymentStatus === 'paid' &&
-      history.paymentStatus !== 'paid'
-    ) {
-      (updateHistoryDto as UpdateHistoryDto & { paidAt?: Date }).paidAt =
-        new Date();
+    if (updateHistoryDto.paymentStatus === 'paid' && history.paymentStatus !== 'paid') {
+      (updateHistoryDto as UpdateHistoryDto & { paidAt?: Date }).paidAt = new Date();
     }
 
     const updated = await this.historyModel.findByIdAndUpdate(
@@ -516,10 +332,7 @@ export class HistoryService {
     });
 
     if (!payment) {
-      throw new HttpException(
-        'Payment not found for the authenticated user',
-        404,
-      );
+      throw new HttpException('Payment not found for the authenticated user', 404);
     }
 
     const history = await this.historyModel.findOne({
@@ -539,10 +352,7 @@ export class HistoryService {
     };
   }
 
-  async getMySingleHistory(
-    historyId: string,
-    userId: string,
-  ): Promise<HistoryDocument> {
+  async getMySingleHistory(historyId: string, userId: string): Promise<HistoryDocument> {
     this.ensureValidObjectId(historyId, 'Invalid history ID');
 
     const history = await this.historyModel.findOne({
@@ -557,33 +367,23 @@ export class HistoryService {
     return history;
   }
 
-  private async findPaidPayment(
-    paymentIntentId: string,
-  ): Promise<PaymentDocument> {
+  private async findPaidPayment(paymentIntentId: string): Promise<PaymentDocument> {
     const payment = await this.paymentModel.findOne({
       stripePaymentIntentId: paymentIntentId,
     });
 
     if (!payment) {
-      throw new HttpException(
-        'Payment not found for the provided payment intent',
-        404,
-      );
+      throw new HttpException('Payment not found for the provided payment intent', 404);
     }
 
     if (payment.status !== PaymentStatus.SUCCEEDED) {
-      throw new HttpException(
-        'Payment has not completed successfully yet',
-        400,
-      );
+      throw new HttpException('Payment has not completed successfully yet', 400);
     }
 
     return payment;
   }
 
-  private extractSuggestedCities(
-    aiResponse: Record<string, any>,
-  ): SuggestedCity[] {
+  private extractSuggestedCities(aiResponse: Record<string, any>): SuggestedCity[] {
     const candidates = Array.isArray(aiResponse?.suggested_cities)
       ? aiResponse.suggested_cities
       : Array.isArray(aiResponse?.response?.suggested_cities)
@@ -599,188 +399,6 @@ export class HistoryService {
       numberOfDays: this.asOptionalNumber(item.number_of_days) || 0,
       description: this.asOptionalString(item.description) || '',
     }));
-  }
-
-  private extractRetreatRecommendations(
-    aiResponse: Record<string, unknown>,
-  ): RetreatRecommendation[] {
-    const candidates = Array.isArray(aiResponse.recommendations)
-      ? aiResponse.recommendations
-      : [];
-
-    return candidates.map((item) => {
-      const value = this.asRecord(item) || {};
-      return {
-        propertyId: this.asOptionalString(value.property_id) || '',
-        propertyName: this.asOptionalString(value.property_name) || '',
-        country: this.asOptionalString(value.country) || '',
-        region: this.asOptionalString(value.region) || '',
-        settings: this.asStringArray(value.settings),
-        matchScore: this.asOptionalNumber(value.match_score) || 0,
-        scoreBreakdown: (value.score_breakdown || {}) as RetreatScoreBreakdown,
-        matchReasons: this.asStringArray(value.match_reasons),
-        warnings: this.asStringArray(value.warnings),
-        restrictionStatus:
-          this.asOptionalString(value.restriction_status) || 'unverified',
-        avgNight: this.asOptionalNumber(value.avg_night),
-        avgNightIsLowerBound: value.avg_night_is_lower_bound === true,
-        avgNightRaw: this.asOptionalString(value.avg_night_raw),
-        budgetTier: this.asOptionalString(value.budget_tier),
-        programCost: this.asOptionalString(value.program_cost),
-        bestSeason: this.asNumberArray(value.best_season),
-        bestSeasonRaw: this.asOptionalString(value.best_season_raw),
-      };
-    });
-  }
-
-  private buildRetreatRecommendationPayload(
-    input: Record<string, unknown>,
-  ): Record<string, unknown> {
-    const allowedFocus = new Set([
-      'Burnout Recovery',
-      'Longevity',
-      'Detox',
-      'Weight Loss',
-      'Spiritual Growth',
-      'Emotional Healing',
-      'Nervous System Reset',
-      'Fitness',
-      'Creativity',
-      'Relationship Repair',
-      'Community',
-      'Sleep',
-      'Digital Detox',
-      'Cultural Immersion',
-    ]);
-    const allowedSettings = new Set([
-      'mountains',
-      'ocean_beach',
-      'jungle_rainforest',
-      'desert',
-      'countryside_farmland',
-      'lake',
-      'city_urban',
-    ]);
-    const transformFocus = this.asStringArray(input.transform_focus).filter(
-      (value) => value !== 'string' && allowedFocus.has(value),
-    );
-    if (!transformFocus.length || transformFocus.length > 3) {
-      throw new BadRequestException(
-        'v2 transform_focus must contain 1 to 3 canonical values',
-      );
-    }
-
-    const travelWindow = this.asRecord(input.travel_window);
-    if (!travelWindow) {
-      throw new BadRequestException('v2 travel_window is required');
-    }
-    const travelMode = this.asOptionalString(travelWindow.mode);
-    if (travelMode === 'flexible') {
-      // Flexible timing must not carry season/month fields to the AI API.
-      input = { ...input, travel_window: { mode: 'flexible' } };
-    } else if (travelMode === 'specific') {
-      const season = this.asOptionalString(travelWindow.season);
-      if (!season) {
-        throw new BadRequestException(
-          'specific travel_window requires a season',
-        );
-      }
-      const months = this.asNumberArray(travelWindow.months);
-      if (season === 'choose_month') {
-        if (!months.length || months.some((month) => month < 1 || month > 12)) {
-          throw new BadRequestException(
-            'choose_month travel_window requires months between 1 and 12',
-          );
-        }
-        input = {
-          ...input,
-          travel_window: { mode: 'specific', season, months },
-        };
-      } else {
-        input = { ...input, travel_window: { mode: 'specific', season } };
-      }
-    } else {
-      throw new BadRequestException(
-        'v2 travel_window.mode must be flexible or specific',
-      );
-    }
-
-    const party = this.asRecord(input.party);
-    const budget = this.asRecord(input.budget);
-    const duration = this.asRecord(input.duration);
-    const restrictions = this.asRecord(input.restrictions) || {};
-    const settings = this.asStringArray(input.settings).filter((value) =>
-      allowedSettings.has(value),
-    );
-    const budgetAmount = this.asOptionalNumber(
-      budget?.per_person_per_night_max,
-    );
-    if (!budgetAmount || budgetAmount <= 0) {
-      throw new BadRequestException(
-        'v2 budget.per_person_per_night_max must be greater than zero',
-      );
-    }
-
-    return {
-      archetype: input.archetype,
-      escape_from: input.escape_from,
-      arrival_priority: input.arrival_priority,
-      structure_preference: input.structure_preference,
-      reset_style: input.reset_style,
-      physical_intensity: input.physical_intensity,
-      party,
-      spirituality: input.spirituality,
-      travel_window: input.travel_window,
-      planning_service_level: input.planning_service_level,
-      restrictions: {
-        text: this.asOptionalString(restrictions.text) || '',
-        codes: this.asStringArray(restrictions.codes).filter(
-          (code) => code !== 'string',
-        ),
-      },
-      settings,
-      budget: {
-        currency: this.asOptionalString(budget?.currency) || 'USD',
-        per_person_per_night_max: budgetAmount,
-        open_ended: budget?.open_ended === true,
-      },
-      duration,
-      transform_focus: [...new Set(transformFocus)],
-    };
-  }
-
-  private mapExtractedRestrictions(
-    value: unknown,
-  ): ExtractedRestrictions | undefined {
-    const record = this.asRecord(value);
-    if (!record) return undefined;
-    return {
-      codes: this.asStringArray(record.codes),
-      accessibilityNeeds: this.asStringArray(record.accessibility_needs),
-      unresolvedText: this.asStringArray(record.unresolved_text),
-    };
-  }
-
-  private buildV2UserProfile(
-    questionnaire: Record<string, unknown>,
-  ): UserProfile {
-    const party = this.asRecord(questionnaire.party);
-    const budget = this.asRecord(questionnaire.budget);
-    const duration = this.asRecord(questionnaire.duration);
-    return {
-      wellnessArchetype: this.asOptionalString(questionnaire.archetype) || '',
-      wellnessNeeds: this.asStringArray(questionnaire.transform_focus),
-      zodiacSign: 'Unknown',
-      currentEnergy: '',
-      emotionalState: this.asOptionalString(questionnaire.escape_from) || '',
-      seeking: this.asOptionalString(questionnaire.reset_style) || '',
-      travelStyle: this.asOptionalString(party?.type) || '',
-      preferredPace:
-        this.asOptionalString(questionnaire.planning_service_level) || '',
-      budget: this.asOptionalNumber(budget?.per_person_per_night_max) || 0,
-      tripLengthDays: this.asOptionalNumber(duration?.exact_nights) || 0,
-      preferredEnvironments: this.asStringArray(questionnaire.settings),
-    };
   }
 
   private mapStay(stay?: TourPlanApiResponse['stay']): StayDetails | undefined {
@@ -808,12 +426,9 @@ export class HistoryService {
       activities: Array.isArray(day.activities)
         ? day.activities.map((activity) => ({
             activityName: this.asOptionalString(activity.activity_name) || '',
-            activityDescription:
-              this.asOptionalString(activity.activity_description) || '',
-            activityLocation:
-              this.asOptionalString(activity.activity_location) || '',
-            activityAddress:
-              this.asOptionalString(activity.activity_address) || '',
+            activityDescription: this.asOptionalString(activity.activity_description) || '',
+            activityLocation: this.asOptionalString(activity.activity_location) || '',
+            activityAddress: this.asOptionalString(activity.activity_address) || '',
             activityImage: this.asStringArray(activity.activity_image),
             activityTime: this.asOptionalString(activity.activity_time) || '',
             activityCost: this.asOptionalNumber(activity.activity_cost) || 0,
@@ -839,9 +454,7 @@ export class HistoryService {
       homeBase: stay?.name || selectedCity,
       homeBaseDescription: stay?.address || '',
       accommodationType: stay?.priceLevel,
-      accommodationFeatures: stay?.photos?.length
-        ? ['Photo gallery available']
-        : [],
+      accommodationFeatures: stay?.photos?.length ? ['Photo gallery available'] : [],
       itinerary: tourPlan.map((day) => ({
         day: day.day,
         title: `Day ${day.day}`,
@@ -859,8 +472,7 @@ export class HistoryService {
     const archetypeProfile = this.asRecord(answers.archetype_profile);
 
     return {
-      wellnessArchetype:
-        this.asOptionalString(answers.selected_archetype) || '',
+      wellnessArchetype: this.asOptionalString(answers.selected_archetype) || '',
       wellnessNeeds: this.asStringArray(archetypeProfile?.needs),
       zodiacSign: this.getZodiacSign(this.asOptionalString(answers.birthdate)),
       currentEnergy: this.asOptionalString(answers.energy_level) || '',
@@ -869,9 +481,7 @@ export class HistoryService {
         dto.hope_of_this_trip ||
         this.asOptionalString(answers.experience_kind) ||
         '',
-      travelStyle: this.mapTravelStyle(
-        this.asOptionalString(answers.travel_style),
-      ),
+      travelStyle: this.mapTravelStyle(this.asOptionalString(answers.travel_style)),
       preferredPace: this.mapPreferredPace(
         this.asOptionalString(answers.trip_organization),
       ),
@@ -939,27 +549,17 @@ export class HistoryService {
     const month = date.getUTCMonth() + 1;
     const day = date.getUTCDate();
 
-    if ((month === 3 && day >= 21) || (month === 4 && day <= 19))
-      return 'Aries';
-    if ((month === 4 && day >= 20) || (month === 5 && day <= 20))
-      return 'Taurus';
-    if ((month === 5 && day >= 21) || (month === 6 && day <= 20))
-      return 'Gemini';
-    if ((month === 6 && day >= 21) || (month === 7 && day <= 22))
-      return 'Cancer';
+    if ((month === 3 && day >= 21) || (month === 4 && day <= 19)) return 'Aries';
+    if ((month === 4 && day >= 20) || (month === 5 && day <= 20)) return 'Taurus';
+    if ((month === 5 && day >= 21) || (month === 6 && day <= 20)) return 'Gemini';
+    if ((month === 6 && day >= 21) || (month === 7 && day <= 22)) return 'Cancer';
     if ((month === 7 && day >= 23) || (month === 8 && day <= 22)) return 'Leo';
-    if ((month === 8 && day >= 23) || (month === 9 && day <= 22))
-      return 'Virgo';
-    if ((month === 9 && day >= 23) || (month === 10 && day <= 22))
-      return 'Libra';
-    if ((month === 10 && day >= 23) || (month === 11 && day <= 21))
-      return 'Scorpio';
-    if ((month === 11 && day >= 22) || (month === 12 && day <= 21))
-      return 'Sagittarius';
-    if ((month === 12 && day >= 22) || (month === 1 && day <= 19))
-      return 'Capricorn';
-    if ((month === 1 && day >= 20) || (month === 2 && day <= 18))
-      return 'Aquarius';
+    if ((month === 8 && day >= 23) || (month === 9 && day <= 22)) return 'Virgo';
+    if ((month === 9 && day >= 23) || (month === 10 && day <= 22)) return 'Libra';
+    if ((month === 10 && day >= 23) || (month === 11 && day <= 21)) return 'Scorpio';
+    if ((month === 11 && day >= 22) || (month === 12 && day <= 21)) return 'Sagittarius';
+    if ((month === 12 && day >= 22) || (month === 1 && day <= 19)) return 'Capricorn';
+    if ((month === 1 && day >= 20) || (month === 2 && day <= 18)) return 'Aquarius';
     return 'Pisces';
   }
 
@@ -971,13 +571,6 @@ export class HistoryService {
     return value
       .map((item) => this.asOptionalString(item))
       .filter((item): item is string => Boolean(item));
-  }
-
-  private asNumberArray(value: unknown): number[] {
-    if (!Array.isArray(value)) return [];
-    return value
-      .map((item) => this.asOptionalNumber(item))
-      .filter((item): item is number => item !== undefined);
   }
 
   private asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -993,9 +586,7 @@ export class HistoryService {
   private asOptionalNumber(value: unknown): number | undefined {
     return typeof value === 'number' && Number.isFinite(value)
       ? value
-      : typeof value === 'string' &&
-          value.trim() &&
-          Number.isFinite(Number(value))
+      : typeof value === 'string' && value.trim() && Number.isFinite(Number(value))
         ? Number(value)
         : undefined;
   }

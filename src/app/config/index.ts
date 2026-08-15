@@ -48,9 +48,6 @@ export default {
     tourPlanUrl:
       process.env.AI_TOUR_PLAN_URL ||
       'https://arkeric88.onrender.com/get_tour_plan',
-    retreatRecommendationsUrl:
-      process.env.AI_RETREAT_RECOMMENDATIONS_URL ||
-      'https://arkeric88.onrender.com/v2/retreat-recommendations',
     timeoutMs: Number(process.env.AI_REQUEST_TIMEOUT_MS || 60000),
   },
   twilio: {

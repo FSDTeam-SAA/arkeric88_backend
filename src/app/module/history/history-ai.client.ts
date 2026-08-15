@@ -16,7 +16,6 @@ type SuggestedCityPayload = {
 type TourPlanPayload = {
   session_id: string;
   selected_city: string;
-  property_id?: string;
 };
 
 @Injectable()
@@ -25,10 +24,6 @@ export class HistoryAiClient {
 
   async getSuggestedCities(payload: SuggestedCityPayload) {
     return this.post(config.ai.suggestedCityUrl, payload);
-  }
-
-  async getRetreatRecommendations(payload: Record<string, unknown>) {
-    return this.post(config.ai.retreatRecommendationsUrl, payload);
   }
 
   async getTourPlan(payload: TourPlanPayload) {
@@ -49,16 +44,10 @@ export class HistoryAiClient {
       this.logger.error(`AI request failed for ${url}`, error as Error);
 
       if (error instanceof AxiosError) {
-        const responseData = error.response?.data;
-        this.logger.error(
-          `AI validation/provider response: ${JSON.stringify(responseData)}`,
-        );
         const message =
-          typeof responseData === 'string'
-            ? responseData
-            : responseData?.detail ||
-              responseData?.message ||
-              'AI service request failed';
+          typeof error.response?.data === 'string'
+            ? error.response.data
+            : error.response?.data?.message || 'AI service request failed';
 
         throw new HttpException(message, error.response?.status || 502);
       }

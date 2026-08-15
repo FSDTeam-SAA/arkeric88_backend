@@ -33,9 +33,7 @@ export enum PaymentAnalysisStatus {
 }
 
 export class PaymentAnalysisRequest {
-  version?: 'legacy' | 'v2';
   questions_answers?: Record<string, unknown>;
-  questionnaire?: Record<string, unknown>;
   preferred_destinations?: string;
   hope_of_this_trip?: string;
 }
@@ -81,26 +79,14 @@ export class Payment {
   @Prop({ trim: true })
   zipCode?: string;
 
-  @Prop({
-    required: true,
-    unique: true,
-    index: true,
-    trim: true,
-    minlength: 6,
-    maxlength: 6,
-  })
+  @Prop({ required: true, unique: true, index: true, trim: true, minlength: 6, maxlength: 6 })
   paymentId: string;
 
   @Prop({ index: true, sparse: true })
   stripePaymentIntentId?: string;
 
   @Prop({
-    type: [
-      {
-        question: { type: String, required: true },
-        answer: { type: String, required: true },
-      },
-    ],
+    type: [{ question: { type: String, required: true }, answer: { type: String, required: true } }],
     default: [],
     _id: false,
   })
@@ -108,9 +94,6 @@ export class Payment {
 
   @Prop({ type: Object })
   analysisRequest?: PaymentAnalysisRequest;
-
-  @Prop({ enum: ['legacy', 'v2'], default: 'legacy' })
-  questionnaireVersion: 'legacy' | 'v2';
 
   @Prop({
     type: String,
