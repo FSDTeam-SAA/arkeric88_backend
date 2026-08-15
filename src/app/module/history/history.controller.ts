@@ -24,6 +24,7 @@ import AuthGuard from 'src/app/middlewares/auth.guard';
 import { CreateHistoryDto } from './dto/create.history.dto';
 import { RequestSuggestedCitiesDto } from './dto/request-suggested-cities.dto';
 import { RequestTourPlanDto } from './dto/request-tour-plan.dto';
+import { RequestRetreatRecommendationsDto } from './dto/retreat-v2.dto';
 import { UpdateHistoryDto } from './dto/update.history.dto';
 import { HistoryService } from './history.service';
 
@@ -41,8 +42,14 @@ export class HistoryController {
   @ApiBearerAuth('access-token')
   @UseGuards(AuthGuard('user'))
   @HttpCode(HttpStatus.CREATED)
-  async createHistory(@Body() createHistoryDto: CreateHistoryDto, @Req() req: Request) {
-    const result = await this.historyService.createHistory(createHistoryDto, req.user!.id);
+  async createHistory(
+    @Body() createHistoryDto: CreateHistoryDto,
+    @Req() req: Request,
+  ) {
+    const result = await this.historyService.createHistory(
+      createHistoryDto,
+      req.user!.id,
+    );
     return {
       message: 'History created successfully',
       data: result,
@@ -62,9 +69,35 @@ export class HistoryController {
     @Body() dto: RequestSuggestedCitiesDto,
     @Req() req: Request,
   ) {
-    const result = await this.historyService.generateSuggestedCities(dto, req.user!.id);
+    const result = await this.historyService.generateSuggestedCities(
+      dto,
+      req.user!.id,
+    );
     return {
       message: 'Suggested cities generated successfully',
+      data: result,
+    };
+  }
+
+  @Post('retreat-recommendations')
+  @ApiOperation({
+    summary: 'Generate v2 retreat recommendations after payment',
+    description:
+      'Validates the successful one-time payment, ranks retreat properties, and stores the versioned recommendation response.',
+  })
+  @ApiBearerAuth('access-token')
+  @UseGuards(AuthGuard('user'))
+  @HttpCode(HttpStatus.CREATED)
+  async generateRetreatRecommendations(
+    @Body() dto: RequestRetreatRecommendationsDto,
+    @Req() req: Request,
+  ) {
+    const result = await this.historyService.generateRetreatRecommendations(
+      dto,
+      req.user!.id,
+    );
+    return {
+      message: 'Retreat recommendations generated successfully',
       data: result,
     };
   }
@@ -79,7 +112,10 @@ export class HistoryController {
   @UseGuards(AuthGuard('user'))
   @HttpCode(HttpStatus.OK)
   async generateTourPlan(@Body() dto: RequestTourPlanDto, @Req() req: Request) {
-    const result = await this.historyService.generateTourPlan(dto, req.user!.id);
+    const result = await this.historyService.generateTourPlan(
+      dto,
+      req.user!.id,
+    );
     return {
       message: 'Tour plan generated successfully',
       data: result,
@@ -95,15 +131,33 @@ export class HistoryController {
     required: false,
     enum: ['pending', 'suggested_cities_ready', 'completed', 'failed'],
   })
-  @ApiQuery({ name: 'paymentStatus', required: false, enum: ['unpaid', 'paid', 'refunded'] })
+  @ApiQuery({
+    name: 'paymentStatus',
+    required: false,
+    enum: ['unpaid', 'paid', 'refunded'],
+  })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
-  @ApiQuery({ name: 'sortBy', required: false, type: String, example: 'createdAt' })
-  @ApiQuery({ name: 'sortOrder', required: false, enum: ['asc', 'desc'], example: 'desc' })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    type: String,
+    example: 'createdAt',
+  })
+  @ApiQuery({
+    name: 'sortOrder',
+    required: false,
+    enum: ['asc', 'desc'],
+    example: 'desc',
+  })
   @UseGuards(AuthGuard('admin'))
   @HttpCode(HttpStatus.OK)
   async getAllHistory(@Req() req: Request) {
-    const params = pick(req.query, ['searchTerm', 'aiAnalysisStatus', 'paymentStatus']);
+    const params = pick(req.query, [
+      'searchTerm',
+      'aiAnalysisStatus',
+      'paymentStatus',
+    ]);
     const options = pick(req.query, ['limit', 'page', 'sortBy', 'sortOrder']);
     const result = await this.historyService.getAllHistory(params, options);
     return {
@@ -116,11 +170,26 @@ export class HistoryController {
   @Get('user/:userId')
   @ApiOperation({ summary: 'Get history records for a specific user (admin)' })
   @ApiBearerAuth('access-token')
-  @ApiParam({ name: 'userId', required: true, type: String, description: 'User MongoDB ID' })
+  @ApiParam({
+    name: 'userId',
+    required: true,
+    type: String,
+    description: 'User MongoDB ID',
+  })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
-  @ApiQuery({ name: 'sortBy', required: false, type: String, example: 'createdAt' })
-  @ApiQuery({ name: 'sortOrder', required: false, enum: ['asc', 'desc'], example: 'desc' })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    type: String,
+    example: 'createdAt',
+  })
+  @ApiQuery({
+    name: 'sortOrder',
+    required: false,
+    enum: ['asc', 'desc'],
+    example: 'desc',
+  })
   @UseGuards(AuthGuard('admin'))
   @HttpCode(HttpStatus.OK)
   async getUserHistory(@Param('userId') userId: string, @Req() req: Request) {
@@ -140,13 +209,26 @@ export class HistoryController {
   @ApiBearerAuth('access-token')
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
-  @ApiQuery({ name: 'sortBy', required: false, type: String, example: 'createdAt' })
-  @ApiQuery({ name: 'sortOrder', required: false, enum: ['asc', 'desc'], example: 'desc' })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    type: String,
+    example: 'createdAt',
+  })
+  @ApiQuery({
+    name: 'sortOrder',
+    required: false,
+    enum: ['asc', 'desc'],
+    example: 'desc',
+  })
   @UseGuards(AuthGuard('admin', 'user'))
   @HttpCode(HttpStatus.OK)
   async getMyHistory(@Req() req: Request) {
     const options = pick(req.query, ['limit', 'page', 'sortBy', 'sortOrder']);
-    const result = await this.historyService.getMyHistory(req.user!.id, options);
+    const result = await this.historyService.getMyHistory(
+      req.user!.id,
+      options,
+    );
     return {
       message: 'History fetched successfully',
       meta: result.meta,
@@ -185,13 +267,23 @@ export class HistoryController {
   }
 
   @Get('my/:id')
-  @ApiOperation({ summary: 'Get a single history record of the authenticated user' })
+  @ApiOperation({
+    summary: 'Get a single history record of the authenticated user',
+  })
   @ApiBearerAuth('access-token')
-  @ApiParam({ name: 'id', required: true, type: String, description: 'History ID' })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    type: String,
+    description: 'History ID',
+  })
   @UseGuards(AuthGuard('admin', 'user'))
   @HttpCode(HttpStatus.OK)
   async getMySingleHistory(@Param('id') id: string, @Req() req: Request) {
-    const result = await this.historyService.getMySingleHistory(id, req.user!.id);
+    const result = await this.historyService.getMySingleHistory(
+      id,
+      req.user!.id,
+    );
     return {
       message: 'History fetched successfully',
       data: result,
@@ -201,7 +293,12 @@ export class HistoryController {
   @Get(':id')
   @ApiOperation({ summary: 'Get a single history record by ID (admin)' })
   @ApiBearerAuth('access-token')
-  @ApiParam({ name: 'id', required: true, type: String, description: 'History ID' })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    type: String,
+    description: 'History ID',
+  })
   @UseGuards(AuthGuard('admin'))
   @HttpCode(HttpStatus.OK)
   async getSingleHistory(@Param('id') id: string) {
@@ -220,13 +317,21 @@ export class HistoryController {
   })
   @ApiBearerAuth('access-token')
   @UseGuards(AuthGuard('admin'))
-  @ApiParam({ name: 'id', required: true, type: String, description: 'History ID' })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    type: String,
+    description: 'History ID',
+  })
   @HttpCode(HttpStatus.OK)
   async updateHistory(
     @Param('id') id: string,
     @Body() updateHistoryDto: UpdateHistoryDto,
   ) {
-    const result = await this.historyService.updateHistory(id, updateHistoryDto);
+    const result = await this.historyService.updateHistory(
+      id,
+      updateHistoryDto,
+    );
     return {
       message: 'History updated successfully',
       data: result,
@@ -237,7 +342,12 @@ export class HistoryController {
   @ApiOperation({ summary: 'Delete a history record (admin)' })
   @ApiBearerAuth('access-token')
   @UseGuards(AuthGuard('admin'))
-  @ApiParam({ name: 'id', required: true, type: String, description: 'History ID' })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    type: String,
+    description: 'History ID',
+  })
   @HttpCode(HttpStatus.OK)
   async deleteHistory(@Param('id') id: string) {
     const result = await this.historyService.deleteHistory(id);

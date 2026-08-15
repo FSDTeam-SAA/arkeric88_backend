@@ -212,7 +212,7 @@
         return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' + (ICONS[name] || '') + '</svg>';
       }
 
-      const QUIZ_QUESTIONS = [
+      const LEGACY_QUIZ_QUESTIONS = [
         {
           question: 'How are you feeling today?',
           layout: 'cols-2',
@@ -259,6 +259,24 @@
       ];
 
       // ─── DOM refs ────────────────────────────────────────────────────
+      const QUIZ_QUESTIONS = [
+        {key:'archetype',question:'Which wellness traveler feels most like you right now?',layout:'cols-2',options:[{label:'Burned-out achiever',value:'burned_out_achiever',icon:'cloud'},{label:'Transformer',value:'transformer',icon:'sparkle'},{label:'Seeker',value:'seeker',icon:'compass'},{label:'Optimizer',value:'optimizer',icon:'bolt'},{label:'Escapist',value:'escapist',icon:'wind'},{label:'Reconnector',value:'reconnector',icon:'heart'}]},
+        {key:'escape_from',question:'What do you most want a break from?',layout:'cols-2',options:[{label:'Noise and stimulation',value:'noise_stimulation',icon:'zap'},{label:'Responsibility and decisions',value:'responsibility_decisions',icon:'cloud'},{label:'Routine and repetition',value:'routine_repetition',icon:'dots'},{label:'Emotional heaviness',value:'emotional_heaviness',icon:'heart'}]},
+        {key:'arrival_priority',question:'What would make you exhale the moment you arrive?',layout:'cols-2',options:[{label:'A breathtaking view',value:'breathtaking_view',icon:'compass'},{label:'Silence and privacy',value:'silence_privacy',icon:'moon'},{label:'Warmth, water and sunshine',value:'warmth_water_sunshine',icon:'star'},{label:'Beautiful design and service',value:'beautiful_design_service',icon:'sparkle'}]},
+        {key:'structure_preference',question:'How much structure do you want day to day?',layout:'cols-2',options:[{label:'Almost none',value:'almost_none',icon:'feather'},{label:'Optional rituals',value:'optional_rituals',icon:'moon'},{label:'One daily anchor',value:'one_daily_anchor',icon:'star'},{label:'Full program',value:'full_program',icon:'bolt'}]},
+        {key:'reset_style',question:'What kind of reset sounds most appealing?',layout:'cols-2',options:[{label:'Digital disconnection',value:'digital_disconnection',icon:'wind'},{label:'Sensory indulgence',value:'sensory_indulgence',icon:'star'},{label:'Creative inspiration',value:'creative_inspiration',icon:'sparkle'},{label:'Doing nothing',value:'doing_nothing',icon:'moon'}]},
+        {key:'physical_intensity',question:'How intense should the physical side of this trip be?',layout:'cols-3',options:[{label:'Gentle',value:'gentle',icon:'feather'},{label:'Moderate',value:'moderate',icon:'flame'},{label:'Challenging',value:'challenging',icon:'bolt'}]},
+        {key:'party',question:'Who will share this journey with you?',layout:'cols-4',options:[{label:'Solo',value:'solo',desc:'Just me and my thoughts',icon:'user'},{label:'Couple',value:'couple',desc:'An intimate shared experience',icon:'couple'},{label:'Small group',value:'small_group',desc:'Three or more companions',icon:'group'},{label:'Family',value:'family',desc:'Travel with loved ones',icon:'home'}]},
+        {key:'spirituality',question:'How open are you to spiritual or ceremonial elements?',layout:'cols-4',options:[{label:'None',value:'none',icon:'dots'},{label:'Light',value:'light',icon:'feather'},{label:'Moderate',value:'moderate',icon:'moon'},{label:'Deep',value:'deep',icon:'sparkle'}]},
+        {key:'travel_window',question:'When are you hoping to travel?',layout:'cols-2',options:[{label:'I am flexible',value:'flexible',icon:'wind'},{label:'I have a specific season',value:'specific',icon:'compass'}]},
+        {key:'planning_service_level',question:'How would you like your trip organized?',layout:'cols-3',options:[{label:'Loose',value:'loose',icon:'wind'},{label:'Well planned',value:'well_planned',icon:'compass'},{label:'Hour by hour',value:'hour_by_hour',icon:'bolt'}]},
+        {key:'restrictions',question:'Any activities to avoid, or things you cannot do?',layout:'cols-2',options:[{label:'No restrictions',value:'',icon:'smile'},{label:'No hiking or water activities',value:'No hiking or water activities',icon:'feather'}]},
+        {key:'settings',question:'What environment speaks to your soul?',layout:'cols-3',options:[{label:'Mountains',value:'mountains',icon:'compass'},{label:'Ocean / beach',value:'ocean_beach',icon:'wind'},{label:'Jungle / rainforest',value:'jungle_rainforest',icon:'leaf'},{label:'Desert',value:'desert',icon:'sun'},{label:'Countryside',value:'countryside_farmland',icon:'home'},{label:'Lake',value:'lake',icon:'cloud'},{label:'City / urban',value:'city_urban',icon:'dots'}]},
+        {key:'budget',question:'What is your trip budget per person per night?',layout:'cols-3',options:[{label:'$100',value:100,icon:'dots'},{label:'$500',value:500,icon:'star'},{label:'$1,000+',value:1000,icon:'sparkle'}]},
+        {key:'duration',question:'How long is your trip?',layout:'cols-4',options:[{label:'1–3 nights',value:'1_3_nights',icon:'moon'},{label:'4–7 nights',value:'4_7_nights',icon:'star'},{label:'1–2 weeks',value:'1_2_weeks',icon:'compass'},{label:'2+ weeks',value:'2_plus_weeks',icon:'wind'}]},
+        {key:'transform_focus',multi:true,question:'What do you hope this trip gives you? Choose up to three.',layout:'cols-3',options:[{label:'Burnout Recovery',value:'Burnout Recovery',icon:'cloud'},{label:'Longevity',value:'Longevity',icon:'heart'},{label:'Detox',value:'Detox',icon:'wind'},{label:'Weight Loss',value:'Weight Loss',icon:'feather'},{label:'Spiritual Growth',value:'Spiritual Growth',icon:'sparkle'},{label:'Emotional Healing',value:'Emotional Healing',icon:'heart'},{label:'Nervous System Reset',value:'Nervous System Reset',icon:'moon'},{label:'Fitness',value:'Fitness',icon:'bolt'},{label:'Sleep',value:'Sleep',icon:'moon'}]}
+      ];
+
       const quizSection = document.getElementById('quizSection');
       const quizProgress = document.getElementById('quizProgress');
       const quizQuestionText = document.getElementById('quizQuestionText');
@@ -287,7 +305,7 @@
       let paymentIntentCreated = false;
 
       let currentQuestion = 0;
-      const quizSelections = new Array(QUIZ_QUESTIONS.length).fill(null);
+      const quizSelections = QUIZ_QUESTIONS.map((q) => q.multi ? [] : null);
 
       // ─── Render current quiz question ────────────────────────────────
       function renderQuestion() {
@@ -302,45 +320,74 @@
         q.options.forEach((opt, i) => {
           const btn = document.createElement('button');
           btn.type = 'button';
-          btn.className = 'quiz-option' + (quizSelections[currentQuestion] === i ? ' selected' : '');
+          const selected = q.multi
+            ? quizSelections[currentQuestion].includes(i)
+            : quizSelections[currentQuestion] === i;
+          btn.className = 'quiz-option' + (selected ? ' selected' : '');
           btn.innerHTML = iconSvg(opt.icon) +
             '<span class="quiz-option-text">' +
               '<span class="quiz-option-title">' + opt.label + '</span>' +
               (opt.desc ? '<span class="quiz-option-desc">' + opt.desc + '</span>' : '') +
             '</span>';
           btn.addEventListener('click', () => {
-            quizSelections[currentQuestion] = i;
+            if (q.multi) {
+              const selections = quizSelections[currentQuestion];
+              const position = selections.indexOf(i);
+              if (position >= 0) selections.splice(position, 1);
+              else if (selections.length < 3) selections.push(i);
+            } else {
+              quizSelections[currentQuestion] = i;
+            }
             renderQuestion();
           });
           quizOptionsEl.appendChild(btn);
         });
 
         quizBackBtn.disabled = currentQuestion === 0;
-        continueBtn.disabled = quizSelections[currentQuestion] === null;
+        continueBtn.disabled = q.multi
+          ? quizSelections[currentQuestion].length === 0
+          : quizSelections[currentQuestion] === null;
         continueBtn.textContent = currentQuestion === QUIZ_QUESTIONS.length - 1 ? 'Continue to Payment →' : 'Continue →';
       }
 
       function getQuizAnswers() {
-        return QUIZ_QUESTIONS.map((q, i) => ({
-          question: q.question,
-          answer: quizSelections[i] === null ? '' : q.options[quizSelections[i]].label,
-        }));
+        return QUIZ_QUESTIONS.map((q, i) => {
+          const selection = q.multi
+            ? quizSelections[i].map((index) => q.options[index].label).join(', ')
+            : quizSelections[i] === null ? '' : q.options[quizSelections[i]].label;
+          return { question: q.question, answer: selection };
+        });
       }
 
       function getQuestionnaireAnswers() {
-        const answers = getQuizAnswers();
+        const valueFor = (key) => {
+          const questionIndex = QUIZ_QUESTIONS.findIndex((q) => q.key === key);
+          const question = QUIZ_QUESTIONS[questionIndex];
+          const selection = quizSelections[questionIndex];
+          if (question.multi) return selection.map((index) => question.options[index].value);
+          return selection === null ? undefined : question.options[selection].value;
+        };
+        const partyType = valueFor('party');
+        const partyCounts = {
+          solo: { adults: 1, children: 0 }, couple: { adults: 2, children: 0 },
+          small_group: { adults: 3, children: 0 }, family: { adults: 2, children: 1 },
+        }[partyType] || { adults: 1, children: 0 };
+        const budget = valueFor('budget');
+        const travelMode = valueFor('travel_window');
         return {
-          todays_feeling: answers[0].answer,
-          experience_kind: answers[1].answer,
-          energy_level: answers[2].answer,
-          travel_style: answers[3].answer,
-          trip_organization: 'Balanced',
-          activity_restrictions: ['Intense hiking or climbing'],
-          life_season: 'Building',
-          preferred_environments: ['Nature', 'Ocean'],
-          birthdate: '1995-06-15',
-          total_trip_budget: 2000,
-          trip_length_days: 5,
+          archetype: valueFor('archetype'), escape_from: valueFor('escape_from'),
+          arrival_priority: valueFor('arrival_priority'), structure_preference: valueFor('structure_preference'),
+          reset_style: valueFor('reset_style'), physical_intensity: valueFor('physical_intensity'),
+          party: { type: partyType, ...partyCounts }, spirituality: valueFor('spirituality'),
+          travel_window: travelMode === 'specific'
+            ? { mode: 'specific', season: 'summer' }
+            : { mode: 'flexible' },
+          planning_service_level: valueFor('planning_service_level'),
+          restrictions: { text: valueFor('restrictions'), codes: [] },
+          settings: [valueFor('settings')],
+          budget: { currency: 'USD', per_person_per_night_max: budget, open_ended: false },
+          duration: { bucket: valueFor('duration') },
+          transform_focus: valueFor('transform_focus'),
         };
       }
 
@@ -405,7 +452,7 @@
         payButton.disabled = true;
         const backend = backendInput.value.replace(/\/$/, '');
         const quizData = getQuizAnswers();
-        const questionsAnswers = getQuestionnaireAnswers();
+        const retreatQuestionnaire = getQuestionnaireAnswers();
         const payload = {
           amount: parseFloat(amountInput.value || '0'),
           currency: 'usd',
@@ -415,9 +462,7 @@
           country: countryInput.value,
           zipCode: zipInput.value,
           quiz: quizData,
-          questions_answers: questionsAnswers,
-          preferred_destinations: 'europe',
-          hope_of_this_trip: questionsAnswers.experience_kind,
+          retreat_questionnaire: retreatQuestionnaire,
         };
 
         try {
@@ -476,7 +521,7 @@
             showResult('Payment failed: ' + error.message, false);
           } else if (paymentIntent && paymentIntent.status === 'succeeded') {
             console.log('Payment succeeded:', paymentIntent);
-            showResult('Payment successful. Preparing suggested cities...', true);
+            showResult('Payment successful. Preparing retreat recommendations...', true);
             payButton.textContent = 'Pay Now';
             paymentIntentCreated = false;
             clientSecret = null;
@@ -504,7 +549,7 @@
 
       async function pollSuggestedCities(intentId) {
         if (!intentId) {
-          showCitiesMessage('Missing payment intent id. Cannot fetch suggested cities.', false);
+          showCitiesMessage('Missing payment intent id. Cannot fetch retreat recommendations.', false);
           return;
         }
 
@@ -527,18 +572,18 @@
           const payment = data.payment || {};
           const history = data.history;
 
-          if (history && history.aiAnalysisStatus === 'suggested_cities_ready') {
-            renderSuggestedCities(history);
+          if (history && history.recommendationSessionId && history.aiAnalysisStatus === 'suggested_cities_ready') {
+            renderRetreatRecommendations(history);
             return;
           }
 
           if (payment.analysisStatus === 'failed') {
-            showCitiesMessage(payment.analysisError || 'Suggested city analysis failed.', false);
+            showCitiesMessage(payment.analysisError || 'Retreat recommendation analysis failed.', false);
             return;
           }
 
           showCitiesMessage(
-            'Waiting for suggested cities... payment: ' +
+            'Waiting for retreat recommendations... payment: ' +
               payment.status +
               ', analysis: ' +
               payment.analysisStatus,
@@ -547,43 +592,59 @@
           await sleep(3000);
         }
 
-        showCitiesMessage('Still waiting for suggested cities. Check webhook and AI logs.', false);
+        showCitiesMessage('Still waiting for recommendations. Check webhook and AI logs.', false);
       }
 
-      function renderSuggestedCities(history) {
-        const cities = Array.isArray(history.suggestedCities) ? history.suggestedCities : [];
+      function renderRetreatRecommendations(history) {
+        const properties = Array.isArray(history.retreatRecommendations) ? history.retreatRecommendations : [];
         citiesResultEl.style.display = 'block';
         citiesResultEl.className = 'result success';
         citiesResultEl.innerHTML = '';
 
         const title = document.createElement('div');
-        title.textContent = 'Suggested cities are ready. Choose one:';
+        title.textContent = 'Retreat recommendations are ready. Choose one:';
         citiesResultEl.appendChild(title);
 
         const list = document.createElement('div');
         list.className = 'city-list';
         citiesResultEl.appendChild(list);
 
-        cities.forEach((city) => {
+        properties.forEach((property) => {
           const btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'city-button';
-          btn.textContent = city.cityName + (city.countryName ? ', ' + city.countryName : '');
+          btn.textContent = property.propertyName + (property.country ? ', ' + property.country : '');
 
           const meta = document.createElement('span');
           meta.className = 'city-meta';
-          meta.textContent = city.numberOfDays ? city.numberOfDays + ' days' : 'Tap to get full tour plan';
+          meta.textContent = (property.region || 'Retreat property') + ' · Tap to get full tour plan';
           btn.appendChild(meta);
 
-          btn.addEventListener('click', () => requestTourPlan(history.aiSessionId, city.cityName));
+          const score = document.createElement('span');
+          score.className = 'property-score';
+          score.textContent = 'Match score: ' + property.matchScore + '/100';
+          btn.appendChild(score);
+
+          const breakdown = document.createElement('span');
+          breakdown.className = 'property-breakdown';
+          breakdown.textContent = property.matchReasons && property.matchReasons.length
+            ? property.matchReasons.join(' ')
+            : (property.warnings || []).join(' ');
+          btn.appendChild(breakdown);
+
+          btn.addEventListener('click', () => requestTourPlan(
+            history.recommendationSessionId,
+            property.propertyId,
+            property.propertyName,
+          ));
           list.appendChild(btn);
         });
       }
 
-      async function requestTourPlan(sessionId, selectedCity) {
+      async function requestTourPlan(sessionId, propertyId, propertyName) {
         const backend = backendInput.value.replace(/\/$/, '');
         const token = getAuthToken();
-        showCitiesMessage('Creating full tour plan for ' + selectedCity + '...', true);
+        showCitiesMessage('Creating full tour plan for ' + propertyName + '...', true);
 
         const r = await fetch(backend + '/history/tour-plan', {
           method: 'POST',
@@ -593,7 +654,8 @@
           },
           body: JSON.stringify({
             session_id: sessionId,
-            selected_city: selectedCity,
+            selected_city: propertyName,
+            property_id: propertyId,
           }),
         });
 
@@ -604,7 +666,7 @@
         }
 
         console.log('Tour plan response:', json);
-        showCitiesMessage('Full tour plan created for ' + selectedCity + '. Check console/history response.', true);
+        showCitiesMessage('Full tour plan created for ' + propertyName + '. Check console/history response.', true);
       }
 
       payButton.addEventListener('click', (e) => {

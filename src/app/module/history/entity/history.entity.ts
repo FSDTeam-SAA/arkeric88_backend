@@ -51,6 +51,45 @@ export class SuggestedCity {
   description: string;
 }
 
+export class RetreatScoreBreakdown {
+  archetype: number;
+  transform_focus: number;
+  emotional_tone: number;
+  structure: number;
+  physical_intensity: number;
+  party_social: number;
+  emotional_safety: number;
+  nature: number;
+  luxury: number;
+  spirituality: number;
+}
+
+export class RetreatRecommendation {
+  propertyId: string;
+  propertyName: string;
+  country: string;
+  region: string;
+  settings: string[];
+  matchScore: number;
+  scoreBreakdown: RetreatScoreBreakdown;
+  matchReasons: string[];
+  warnings: string[];
+  restrictionStatus: string;
+  avgNight?: number;
+  avgNightIsLowerBound?: boolean;
+  avgNightRaw?: string;
+  budgetTier?: string;
+  programCost?: string;
+  bestSeason: number[];
+  bestSeasonRaw?: string;
+}
+
+export class ExtractedRestrictions {
+  codes: string[];
+  accessibilityNeeds: string[];
+  unresolvedText: string[];
+}
+
 export class Coordinates {
   lat: number;
   lng: number;
@@ -125,13 +164,46 @@ export class HistoryRecord {
   aiSessionId?: string;
 
   @Prop({ index: true, sparse: true })
+  recommendationSessionId?: string;
+
+  @Prop()
+  schemaVersion?: string;
+
+  @Prop()
+  scoringVersion?: string;
+
+  @Prop()
+  answerMappingVersion?: string;
+
+  @Prop()
+  databaseVersion?: string;
+
+  @Prop({ index: true, sparse: true })
   activitySessionId?: string;
 
   @Prop({ type: [Object], default: [] })
   suggestedCities: SuggestedCity[];
 
+  @Prop({ type: [Object], default: [] })
+  retreatRecommendations: RetreatRecommendation[];
+
+  @Prop()
+  excludedCount?: number;
+
+  @Prop()
+  totalCandidateCount?: number;
+
+  @Prop({ type: Object })
+  extractedRestrictions?: ExtractedRestrictions;
+
+  @Prop({ type: [String], default: [] })
+  dataGaps: string[];
+
   @Prop()
   selectedCity?: string;
+
+  @Prop({ index: true, sparse: true })
+  selectedPropertyId?: string;
 
   @Prop({ type: Object })
   stay?: StayDetails;
