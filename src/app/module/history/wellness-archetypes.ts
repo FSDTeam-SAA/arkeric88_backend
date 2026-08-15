@@ -374,6 +374,103 @@ function validateCommonAnswers(answers: Record<string, unknown>): Record<string,
   };
 }
 
+function isNewQuestionnaire(answers: Record<string, unknown>): boolean {
+  return [
+    'break_from',
+    'arrival_priority',
+    'retreat_structure',
+    'reset_style',
+    'physical_intensity',
+    'travel_party',
+    'spirituality',
+    'travel_timing',
+    'planning_service',
+    'preferred_setting',
+    'budget_per_night',
+    'trip_length',
+    'transform_focus',
+  ].every((key) => key in answers);
+}
+
+const newQuestionnaireValues = {
+  break_from: ['noise_stimulation', 'responsibility_decisions', 'routine_repetition', 'emotional_heaviness'],
+  arrival_priority: ['breathtaking_view', 'silence_privacy', 'warmth_water_sunshine', 'beautiful_design_service'],
+  retreat_structure: ['almost_none', 'optional_rituals', 'one_daily_anchor', 'full_program'],
+  reset_style: ['digital_disconnection', 'sensory_indulgence', 'creative_inspiration', 'doing_nothing'],
+  physical_intensity: ['gentle', 'moderate', 'challenging'],
+  travel_party: ['solo', 'couple', 'small_group', 'family'],
+  spirituality: ['none', 'light', 'moderate', 'deep'],
+  planning_service: ['loose', 'well_planned', 'hour_by_hour'],
+  preferred_setting: ['mountains', 'ocean_beach', 'jungle_rainforest', 'desert', 'countryside_farmland', 'lake', 'city_urban'],
+  trip_length: ['1_3_nights', '4_7_nights', '1_2_weeks', '2_plus_weeks'],
+  transform_focus: [
+    'Burnout Recovery', 'Longevity', 'Detox', 'Weight Loss', 'Spiritual Growth',
+    'Emotional Healing', 'Nervous System Reset', 'Fitness', 'Creativity',
+    'Relationship Repair', 'Community', 'Sleep', 'Digital Detox', 'Cultural Immersion',
+  ],
+  restriction_codes: ['no_hiking', 'no_water_activities', 'no_long_drives', 'no_high_impact'],
+} as const;
+
+function validateNewQuestionnaire(answers: Record<string, unknown>): Record<string, unknown> {
+  const normalized: Record<string, unknown> = { ...answers };
+  for (const [key, allowed] of Object.entries(newQuestionnaireValues)) {
+    if (key === 'preferred_setting' || key === 'transform_focus' || key === 'restriction_codes') continue;
+    normalized[key] = requireAllowedString(answers, key, [...allowed]);
+  }
+
+  const settings = answers.preferred_setting;
+  if (!Array.isArray(settings) || settings.some((item) => typeof item !== 'string' || !(newQuestionnaireValues.preferred_setting as readonly string[]).includes(item))) {
+    throw new BadRequestException('Invalid preferred_setting');
+  }
+  normalized.preferred_setting = [...new Set(settings)];
+
+  const focuses = answers.transform_focus;
+  if (!Array.isArray(focuses) || focuses.length === 0 || focuses.length > 3 || focuses.some((item) => typeof item !== 'string' || !(newQuestionnaireValues.transform_focus as readonly string[]).includes(item))) {
+    throw new BadRequestException('transform_focus must contain one to three canonical values');
+  }
+  normalized.transform_focus = [...new Set(focuses)];
+
+  const restrictions = answers.activity_restrictions;
+  if (!restrictions || typeof restrictions !== 'object' || Array.isArray(restrictions)) {
+    throw new BadRequestException('activity_restrictions must include text and codes');
+  }
+  const { text, codes } = restrictions as Record<string, unknown>;
+  if (typeof text !== 'string' || !Array.isArray(codes) || codes.some((code) => typeof code !== 'string' || !(newQuestionnaireValues.restriction_codes as readonly string[]).includes(code))) {
+    throw new BadRequestException('Invalid activity_restrictions');
+  }
+  normalized.activity_restrictions = { text: text.trim(), codes: [...new Set(codes)] };
+
+  const timing = normalized.travel_timing;
+  const months = answers.travel_months;
+  if (timing === 'flexible') {
+    if (months !== undefined) throw new BadRequestException('Flexible travel timing must not include travel_months');
+  } else if (!Array.isArray(months) || months.length === 0 || months.some((month) => !Number.isInteger(month) || month < 1 || month > 12)) {
+    throw new BadRequestException('Specific travel timing requires one or more month numbers');
+  } else {
+    normalized.travel_months = [...new Set(months)];
+  }
+
+  const budget = Number(answers.budget_per_night);
+  if (!Number.isFinite(budget) || budget < 0) throw new BadRequestException('budget_per_night must be a positive number');
+  if (typeof answers.budget_open_ended !== 'boolean') throw new BadRequestException('budget_open_ended is required');
+  normalized.budget_per_night = budget;
+  normalized.budget_open_ended = answers.budget_open_ended;
+  normalized.currency = 'USD';
+
+  const partyDetails = answers.party_details;
+  if (normalized.travel_party === 'family') {
+    const details = partyDetails as Record<string, unknown> | undefined;
+    if (!details || !Number.isInteger(details.adults) || (details.adults as number) < 1 || !Number.isInteger(details.children) || (details.children as number) < 0) {
+      throw new BadRequestException('Family travel requires adult and child counts');
+    }
+  }
+  if (normalized.travel_party === 'small_group' && partyDetails !== undefined) {
+    const size = (partyDetails as Record<string, unknown>).party_size;
+    if (!Number.isInteger(size) || (size as number) < 2) throw new BadRequestException('Small group party_size must be at least 2');
+  }
+  return normalized;
+}
+
 export function normalizeQuestionnaireAnswers(
   answers: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -387,6 +484,37 @@ export function normalizeQuestionnaireAnswers(
   const archetype = getArchetype(selection);
   if (!archetype) {
     throw new BadRequestException('Unknown wellness traveler archetype');
+  }
+
+  // The new wellness flow has a different contract from the legacy
+  // archetype/birthdate questionnaire. Keep it normalized for the existing
+  // city recommendation pipeline until the versioned retreat API is live.
+  if (isNewQuestionnaire(answers)) {
+    const newAnswers = validateNewQuestionnaire(answers);
+    const transformFocus = Array.isArray(answers.transform_focus)
+      ? answers.transform_focus.join(', ')
+      : '';
+    const travelPeriod = typeof answers.travel_period === 'string'
+      ? answers.travel_period
+      : typeof answers.travel_timing === 'string'
+        ? answers.travel_timing
+        : '';
+
+    return {
+      ...newAnswers,
+      archetype_id: archetype.id,
+      selected_archetype: archetype.id,
+      archetype_name: archetype.name,
+      archetype_profile: {
+        core_traits: archetype.coreTraits,
+        needs: archetype.needs,
+        avoid: archetype.avoid,
+        sample_retreats: archetype.sampleRetreats,
+      },
+      todays_feeling: String(answers.break_from || ''),
+      experience_kind: transformFocus,
+      life_season: travelPeriod,
+    };
   }
 
   const archetypeAnswers = validateArchetypeAnswers(archetype, answers.archetype_answers);

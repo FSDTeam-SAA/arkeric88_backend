@@ -130,4 +130,34 @@ describe('normalizeQuestionnaireAnswers', () => {
       todays_feeling: 'Calm',
     });
   });
+
+  it('normalizes the new fifteen-question flow for the existing city pipeline', () => {
+    const result = normalizeQuestionnaireAnswers({
+      selected_archetype: 'seeker',
+      break_from: 'noise_stimulation',
+      arrival_priority: 'silence_privacy',
+      retreat_structure: 'optional_rituals',
+      reset_style: 'digital_disconnection',
+      physical_intensity: 'gentle',
+      travel_party: 'solo',
+      spirituality: 'deep',
+      travel_timing: 'specific',
+      travel_months: [10],
+      planning_service: 'well_planned',
+      activity_restrictions: { text: 'No hiking', codes: [] },
+      preferred_setting: ['mountains'],
+      budget_per_night: 7000,
+      budget_open_ended: true,
+      trip_length: '4_7_nights',
+      transform_focus: ['Spiritual Growth', 'Nervous System Reset'],
+    });
+
+    expect(result).toMatchObject({
+      archetype_id: 'seeker',
+      selected_archetype: 'seeker',
+      todays_feeling: 'noise_stimulation',
+      experience_kind: 'Spiritual Growth, Nervous System Reset',
+      life_season: 'specific',
+    });
+  });
 });

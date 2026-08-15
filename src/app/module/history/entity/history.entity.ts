@@ -42,6 +42,7 @@ export class UserProfile {
 }
 
 export class SuggestedCity {
+  propertyId?: string;
   cityName: string;
   countryName: string;
   cityImage: string[];
@@ -49,6 +50,16 @@ export class SuggestedCity {
   longitude: number;
   numberOfDays: number;
   description: string;
+  matchScore?: number;
+  matchReasons: string[];
+  warnings: string[];
+  restrictionVerification?: string;
+  nightlyPrice?: string;
+  nightlyPriceIsLowerBound?: boolean;
+  budgetTier?: string;
+  packageType?: string;
+  bestSeason?: string;
+  settings: string[];
 }
 
 export class Coordinates {
@@ -132,6 +143,9 @@ export class HistoryRecord {
 
   @Prop()
   selectedCity?: string;
+
+  @Prop()
+  selectedPropertyId?: string;
 
   @Prop({ type: Object })
   stay?: StayDetails;

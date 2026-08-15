@@ -24,6 +24,8 @@ import AuthGuard from 'src/app/middlewares/auth.guard';
 import { CreateHistoryDto } from './dto/create.history.dto';
 import { RequestSuggestedCitiesDto } from './dto/request-suggested-cities.dto';
 import { RequestTourPlanDto } from './dto/request-tour-plan.dto';
+import { RegenerateSuggestedCitiesDto } from './dto/regenerate-suggested-cities.dto';
+import { RegenerateTourPlanDto } from './dto/regenerate-tour-plan.dto';
 import { UpdateHistoryDto } from './dto/update.history.dto';
 import { HistoryService } from './history.service';
 
@@ -84,6 +86,29 @@ export class HistoryController {
       message: 'Tour plan generated successfully',
       data: result,
     };
+  }
+
+  @Post('regenerate-suggested-cities')
+  @ApiOperation({ summary: 'Get the next distinct suggested-city options for an AI session' })
+  @ApiBearerAuth('access-token')
+  @UseGuards(AuthGuard('user'))
+  @HttpCode(HttpStatus.OK)
+  async regenerateSuggestedCities(
+    @Body() dto: RegenerateSuggestedCitiesDto,
+    @Req() req: Request,
+  ) {
+    const result = await this.historyService.regenerateSuggestedCities(dto, req.user!.id);
+    return { message: 'Suggested cities regenerated successfully', data: result };
+  }
+
+  @Post('regenerate-tour-plan')
+  @ApiOperation({ summary: 'Regenerate all or one day of a saved AI itinerary' })
+  @ApiBearerAuth('access-token')
+  @UseGuards(AuthGuard('user'))
+  @HttpCode(HttpStatus.OK)
+  async regenerateTourPlan(@Body() dto: RegenerateTourPlanDto, @Req() req: Request) {
+    const result = await this.historyService.regenerateTourPlan(dto, req.user!.id);
+    return { message: 'Tour plan regenerated successfully', data: result };
   }
 
   @Get()
@@ -194,6 +219,20 @@ export class HistoryController {
     const result = await this.historyService.getMySingleHistory(id, req.user!.id);
     return {
       message: 'History fetched successfully',
+      data: result,
+    };
+  }
+
+  @Delete('my/:id')
+  @ApiOperation({ summary: 'Delete a history record owned by the authenticated user' })
+  @ApiBearerAuth('access-token')
+  @ApiParam({ name: 'id', required: true, type: String, description: 'History ID' })
+  @UseGuards(AuthGuard('user'))
+  @HttpCode(HttpStatus.OK)
+  async deleteMyHistory(@Param('id') id: string, @Req() req: Request) {
+    const result = await this.historyService.deleteMyHistory(id, req.user!.id);
+    return {
+      message: 'History deleted successfully',
       data: result,
     };
   }

@@ -48,6 +48,12 @@ export default {
     tourPlanUrl:
       process.env.AI_TOUR_PLAN_URL ||
       'https://arkeric88.onrender.com/get_tour_plan',
+    regenerateSuggestedCityUrl:
+      process.env.AI_REGENERATE_SUGGESTED_CITY_URL ||
+      'https://arkeric88.onrender.com/regenerate_suggested_city',
+    regenerateTourPlanUrl:
+      process.env.AI_REGENERATE_TOUR_PLAN_URL ||
+      'https://arkeric88.onrender.com/regenerate_tour_plan',
     timeoutMs: Number(process.env.AI_REQUEST_TIMEOUT_MS || 60000),
   },
   twilio: {

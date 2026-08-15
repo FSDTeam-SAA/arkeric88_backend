@@ -11,4 +11,12 @@ export class RequestTourPlanDto {
   @IsString()
   @IsNotEmpty()
   selected_city: string;
+
+  @ApiProperty({
+    example: 'retreat_118',
+    description: 'The exact property_id returned by the suggested-city response.',
+  })
+  @IsString()
+  @IsNotEmpty()
+  property_id: string;
 }

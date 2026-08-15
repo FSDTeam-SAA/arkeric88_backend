@@ -7,15 +7,20 @@ import {
 import axios, { AxiosError } from 'axios';
 import config from 'src/app/config';
 
-type SuggestedCityPayload = {
-  questions_answers: Record<string, unknown>;
-  preferred_destinations?: string;
-  hope_of_this_trip?: string;
-};
+type SuggestedCityPayload = Record<string, unknown>;
 
 type TourPlanPayload = {
   session_id: string;
   selected_city: string;
+  property_id: string;
+};
+
+type RegenerateSuggestedCityPayload = { session_id: string; user_instruction: string };
+
+type RegenerateTourPlanPayload = {
+  activity_session_id: string;
+  day_to_regenerate?: number | null;
+  user_instruction: string;
 };
 
 @Injectable()
@@ -28,6 +33,14 @@ export class HistoryAiClient {
 
   async getTourPlan(payload: TourPlanPayload) {
     return this.post(config.ai.tourPlanUrl, payload);
+  }
+
+  async regenerateSuggestedCities(payload: RegenerateSuggestedCityPayload) {
+    return this.post(config.ai.regenerateSuggestedCityUrl, payload);
+  }
+
+  async regenerateTourPlan(payload: RegenerateTourPlanPayload) {
+    return this.post(config.ai.regenerateTourPlanUrl, payload);
   }
 
   private async post<TPayload>(url: string, payload: TPayload) {
@@ -44,10 +57,19 @@ export class HistoryAiClient {
       this.logger.error(`AI request failed for ${url}`, error as Error);
 
       if (error instanceof AxiosError) {
+        const responseData = error.response?.data as {
+          message?: string;
+          detail?: Array<{ loc?: Array<string | number>; msg?: string }>;
+        } | string | undefined;
+        const validationMessage = typeof responseData === 'object' && responseData?.detail?.length
+          ? responseData.detail
+              .map((issue) => `${issue.loc?.join('.') || 'request'}: ${issue.msg || 'Invalid value'}`)
+              .join('; ')
+          : undefined;
         const message =
-          typeof error.response?.data === 'string'
-            ? error.response.data
-            : error.response?.data?.message || 'AI service request failed';
+          typeof responseData === 'string'
+            ? responseData
+            : validationMessage || responseData?.message || 'AI service request failed';
 
         throw new HttpException(message, error.response?.status || 502);
       }

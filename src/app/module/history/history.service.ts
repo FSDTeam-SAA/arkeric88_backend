@@ -16,6 +16,8 @@ import {
 import { CreateHistoryDto } from './dto/create.history.dto';
 import { RequestSuggestedCitiesDto } from './dto/request-suggested-cities.dto';
 import { RequestTourPlanDto } from './dto/request-tour-plan.dto';
+import { RegenerateSuggestedCitiesDto } from './dto/regenerate-suggested-cities.dto';
+import { RegenerateTourPlanDto } from './dto/regenerate-tour-plan.dto';
 import { UpdateHistoryDto } from './dto/update.history.dto';
 import {
   Coordinates,
@@ -40,6 +42,8 @@ const historySearchableFields = [
 ];
 
 type SuggestedCityApiItem = {
+  property_id?: string;
+  property_name?: string;
   city_name?: string;
   country_name?: string;
   city_image?: string[];
@@ -47,6 +51,19 @@ type SuggestedCityApiItem = {
   longitude?: number;
   number_of_days?: number;
   description?: string;
+  match_score?: number;
+  match_reasons?: string[];
+  warnings?: string[];
+  trade_offs?: string[];
+  restriction_verification?: string;
+  nightly_price?: string | number;
+  nightly_price_is_lower_bound?: boolean;
+  price_is_lower_bound?: boolean;
+  budget_tier?: string;
+  package_type?: string;
+  package_or_a_la_carte?: string;
+  best_season?: string;
+  settings?: string[];
 };
 
 type TourActivityApiItem = {
@@ -108,11 +125,9 @@ export class HistoryService {
       ...dto,
       questions_answers: normalizeQuestionnaireAnswers(dto.questions_answers),
     };
-    const aiResponse = await this.historyAiClient.getSuggestedCities({
-      questions_answers: normalizedDto.questions_answers,
-      preferred_destinations: normalizedDto.preferred_destinations,
-      hope_of_this_trip: normalizedDto.hope_of_this_trip,
-    });
+    const aiResponse = await this.historyAiClient.getSuggestedCities(
+      this.buildAiRecommendationRequest(normalizedDto.questions_answers),
+    );
 
     const aiSessionId = this.asOptionalString(aiResponse?.session_id);
     if (!aiSessionId) {
@@ -197,9 +212,20 @@ export class HistoryService {
       throw new HttpException('History session not found', 404);
     }
 
+    const selectedProperty = history.suggestedCities.find(
+      (suggestion) => suggestion.propertyId === dto.property_id,
+    );
+    if (!selectedProperty) {
+      throw new HttpException('Selected property does not belong to this journey session', 404);
+    }
+
     const requestedCity = dto.selected_city.trim().toLocaleLowerCase();
     const storedCity = history.selectedCity?.trim().toLocaleLowerCase();
-    if (storedCity === requestedCity && history.tourPlan?.length) {
+    if (
+      storedCity === requestedCity &&
+      history.selectedPropertyId === dto.property_id &&
+      history.tourPlan?.length
+    ) {
       return {
         history,
         aiResponse: history.tourPlanResponse ?? {
@@ -220,6 +246,7 @@ export class HistoryService {
         $set: {
           activitySessionId: this.asOptionalString(aiResponse.activity_session_id),
           selectedCity: dto.selected_city,
+          selectedPropertyId: dto.property_id,
           stay,
           tourPlan,
           totalCostEstimate: this.asOptionalNumber(aiResponse.total_cost_estimate),
@@ -238,6 +265,89 @@ export class HistoryService {
       history: updated!,
       aiResponse,
     };
+  }
+
+  async regenerateSuggestedCities(
+    dto: RegenerateSuggestedCitiesDto,
+    userId: string,
+  ): Promise<{ history: HistoryDocument; aiResponse: Record<string, unknown> }> {
+    const history = await this.historyModel.findOne({
+      user: this.toObjectId(userId, 'Invalid user ID'),
+      aiSessionId: dto.session_id,
+    });
+    if (!history) {
+      throw new HttpException('History session not found', 404);
+    }
+
+    const aiResponse = (await this.historyAiClient.regenerateSuggestedCities({
+      session_id: dto.session_id,
+      user_instruction: 'Show different destination options.',
+    })) as Record<string, unknown>;
+    const updated = await this.historyModel.findByIdAndUpdate(
+      history._id,
+      {
+        $set: {
+          suggestedCities: this.extractSuggestedCities(aiResponse),
+          suggestedCityResponse: aiResponse,
+          selectedCity: undefined,
+          selectedPropertyId: undefined,
+          activitySessionId: undefined,
+          stay: undefined,
+          tourPlan: [],
+          totalCostEstimate: undefined,
+          packingTips: undefined,
+          travelTips: undefined,
+          tourPlanResponse: undefined,
+          aiAnalysisStatus: 'suggested_cities_ready',
+        },
+      },
+      { new: true },
+    );
+
+    return { history: updated!, aiResponse };
+  }
+
+  async regenerateTourPlan(
+    dto: RegenerateTourPlanDto,
+    userId: string,
+  ): Promise<{ history: HistoryDocument; aiResponse: Record<string, unknown> }> {
+    const history = await this.historyModel.findOne({
+      user: this.toObjectId(userId, 'Invalid user ID'),
+      activitySessionId: dto.activity_session_id,
+    });
+    if (!history) {
+      throw new HttpException('Activity session not found', 404);
+    }
+
+    const aiResponse = (await this.historyAiClient.regenerateTourPlan({
+      ...dto,
+      user_instruction: dto.user_instruction || 'Regenerate this itinerary with different activities.',
+    })) as TourPlanApiResponse &
+      Record<string, unknown>;
+    const tourPlan = this.mapTourPlan(aiResponse.tour_plan);
+    const updated = await this.historyModel.findByIdAndUpdate(
+      history._id,
+      {
+        $set: {
+          activitySessionId: this.asOptionalString(aiResponse.activity_session_id) || history.activitySessionId,
+          stay: this.mapStay(aiResponse.stay) || history.stay,
+          tourPlan,
+          totalCostEstimate: this.asOptionalNumber(aiResponse.total_cost_estimate),
+          packingTips: this.asOptionalString(aiResponse.packing_tips),
+          travelTips: this.asOptionalString(aiResponse.travel_tips),
+          source: this.asOptionalString(aiResponse.source),
+          tourPlanResponse: aiResponse,
+          aiAnalysisStatus: 'completed',
+          recommendedJourney: this.buildRecommendedJourney(
+            history.selectedCity || '',
+            this.mapStay(aiResponse.stay) || history.stay,
+            tourPlan,
+          ),
+        },
+      },
+      { new: true },
+    );
+    return { history: updated!, aiResponse };
   }
 
   async getAllHistory(params: IFilterParams, options: IOptions) {
@@ -320,6 +430,20 @@ export class HistoryService {
     return this.historyModel.findByIdAndDelete(id) as Promise<HistoryDocument>;
   }
 
+  async deleteMyHistory(id: string, userId: string): Promise<HistoryDocument> {
+    this.ensureValidObjectId(id, 'Invalid history ID');
+
+    const history = await this.historyModel.findOne({
+      _id: id,
+      user: this.toObjectId(userId, 'Invalid user ID'),
+    });
+    if (!history) {
+      throw new HttpException('History not found', 404);
+    }
+
+    return this.historyModel.findByIdAndDelete(id) as Promise<HistoryDocument>;
+  }
+
   async getMyHistory(userId: string, options: IOptions) {
     return this.getUserHistory(userId, options);
   }
@@ -391,13 +515,33 @@ export class HistoryService {
         : [];
 
     return candidates.map((item: SuggestedCityApiItem) => ({
-      cityName: this.asOptionalString(item.city_name) || '',
+      propertyId: this.asOptionalString(item.property_id),
+      cityName: this.asOptionalString(item.city_name) || this.asOptionalString(item.property_name) || '',
       countryName: this.asOptionalString(item.country_name) || '',
       cityImage: this.asStringArray(item.city_image),
       latitude: this.asOptionalNumber(item.latitude) || 0,
       longitude: this.asOptionalNumber(item.longitude) || 0,
       numberOfDays: this.asOptionalNumber(item.number_of_days) || 0,
       description: this.asOptionalString(item.description) || '',
+      matchScore: this.asOptionalNumber(item.match_score),
+      matchReasons: this.asStringArray(item.match_reasons),
+      warnings: [
+        ...this.asStringArray(item.warnings),
+        ...this.asStringArray(item.trade_offs),
+      ],
+      restrictionVerification: this.asOptionalString(item.restriction_verification),
+      nightlyPrice: this.asOptionalString(item.nightly_price) ||
+        (this.asOptionalNumber(item.nightly_price) !== undefined
+          ? String(this.asOptionalNumber(item.nightly_price))
+          : undefined),
+      nightlyPriceIsLowerBound: Boolean(
+        item.nightly_price_is_lower_bound ?? item.price_is_lower_bound,
+      ),
+      budgetTier: this.asOptionalString(item.budget_tier),
+      packageType: this.asOptionalString(item.package_type) ||
+        this.asOptionalString(item.package_or_a_la_carte),
+      bestSeason: this.asOptionalString(item.best_season),
+      settings: this.asStringArray(item.settings),
     }));
   }
 
@@ -467,27 +611,87 @@ export class HistoryService {
     };
   }
 
+  /** Maps our saved questionnaire shape to the AI service's public v2 schema. */
+  private buildAiRecommendationRequest(answers: Record<string, unknown>): Record<string, unknown> {
+    const partyDetails = this.asRecord(answers.party_details);
+    const partyType = this.asOptionalString(answers.travel_party) || 'solo';
+    const adults = partyType === 'family'
+      ? this.asOptionalNumber(partyDetails?.adults) || 1
+      : partyType === 'small_group'
+        ? this.asOptionalNumber(partyDetails?.party_size) || 2
+        : partyType === 'couple' ? 2 : 1;
+    const travelTiming = this.asOptionalString(answers.travel_timing) || 'flexible';
+
+    return {
+      schema_version: '2026-08-15.v2',
+      archetype: answers.selected_archetype,
+      escape_from: answers.break_from,
+      arrival_priority: answers.arrival_priority,
+      structure_preference: answers.retreat_structure,
+      reset_style: answers.reset_style,
+      physical_intensity: answers.physical_intensity,
+      party: {
+        type: partyType,
+        adults,
+        children: partyType === 'family'
+          ? this.asOptionalNumber(partyDetails?.children) || 0
+          : 0,
+      },
+      spirituality: answers.spirituality,
+      travel_window: {
+        mode: travelTiming,
+        season: travelTiming === 'specific' ? 'choose_month' : null,
+        months: travelTiming === 'specific' ? this.asNumberArray(answers.travel_months) : [],
+      },
+      planning_service_level: answers.planning_service,
+      restrictions: answers.activity_restrictions,
+      settings: this.asStringArray(answers.preferred_setting),
+      budget: {
+        currency: 'USD',
+        per_person_per_night_max: answers.budget_per_night,
+        open_ended: answers.budget_open_ended,
+      },
+      duration: {
+        bucket: answers.trip_length,
+        exact_nights: null,
+      },
+      transform_focus: this.asStringArray(answers.transform_focus),
+    };
+  }
+
   private buildUserProfile(dto: RequestSuggestedCitiesDto): UserProfile {
     const answers = dto.questions_answers || {};
     const archetypeProfile = this.asRecord(answers.archetype_profile);
+    const tripLength = this.asOptionalString(answers.trip_length);
+    const tripLengthDays = this.asOptionalNumber(answers.trip_length_days) || (
+      tripLength === '1_3_nights' || tripLength === '1_3_days' ? 3 :
+        tripLength === '4_7_nights' || tripLength === '4_7_days' ? 7 :
+          tripLength === '1_2_weeks' ? 14 :
+            tripLength === '2_plus_weeks' ? 21 : 0
+    );
+    const preferredEnvironments = this.asStringArray(answers.preferred_environments);
+    const preferredSetting = this.asStringArray(answers.preferred_setting);
 
     return {
       wellnessArchetype: this.asOptionalString(answers.selected_archetype) || '',
       wellnessNeeds: this.asStringArray(archetypeProfile?.needs),
       zodiacSign: this.getZodiacSign(this.asOptionalString(answers.birthdate)),
-      currentEnergy: this.asOptionalString(answers.energy_level) || '',
-      emotionalState: this.asOptionalString(answers.todays_feeling) || '',
+      currentEnergy: this.asOptionalString(answers.energy_level) || this.asOptionalString(answers.physical_intensity) || '',
+      emotionalState: this.asOptionalString(answers.todays_feeling) || this.asOptionalString(answers.break_from) || '',
       seeking:
         dto.hope_of_this_trip ||
         this.asOptionalString(answers.experience_kind) ||
+        this.asStringArray(answers.transform_focus).join(', ') ||
         '',
-      travelStyle: this.mapTravelStyle(this.asOptionalString(answers.travel_style)),
-      preferredPace: this.mapPreferredPace(
-        this.asOptionalString(answers.trip_organization),
+      travelStyle: this.mapTravelStyle(
+        this.asOptionalString(answers.travel_style) || this.asOptionalString(answers.travel_party),
       ),
-      budget: this.asOptionalNumber(answers.total_trip_budget) || 0,
-      tripLengthDays: this.asOptionalNumber(answers.trip_length_days) || 0,
-      preferredEnvironments: this.asStringArray(answers.preferred_environments),
+      preferredPace: this.mapPreferredPace(
+        this.asOptionalString(answers.trip_organization) || this.asOptionalString(answers.planning_service),
+      ),
+      budget: this.asOptionalNumber(answers.total_trip_budget) || this.asOptionalNumber(answers.budget_per_night) || 0,
+      tripLengthDays,
+      preferredEnvironments: preferredEnvironments.length ? preferredEnvironments : preferredSetting,
     };
   }
 
@@ -498,9 +702,11 @@ export class HistoryService {
       this.asOptionalString(answers.selected_archetype),
       ...this.asStringArray(archetypeProfile?.needs),
       ...this.asStringArray(answers.preferred_environments),
+      ...this.asStringArray(answers.preferred_setting),
       dto.preferred_destinations,
       dto.hope_of_this_trip,
       this.asOptionalString(answers.experience_kind),
+      ...this.asStringArray(answers.transform_focus),
       this.asOptionalString(answers.life_season),
     ].filter((value): value is string => Boolean(value));
 
@@ -571,6 +777,13 @@ export class HistoryService {
     return value
       .map((item) => this.asOptionalString(item))
       .filter((item): item is string => Boolean(item));
+  }
+
+  private asNumberArray(value: unknown): number[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((item) => this.asOptionalNumber(item))
+      .filter((item): item is number => item !== undefined);
   }
 
   private asRecord(value: unknown): Record<string, unknown> | undefined {
