@@ -57,19 +57,29 @@ export class HistoryAiClient {
       this.logger.error(`AI request failed for ${url}`, error as Error);
 
       if (error instanceof AxiosError) {
-        const responseData = error.response?.data as {
-          message?: string;
-          detail?: Array<{ loc?: Array<string | number>; msg?: string }>;
-        } | string | undefined;
-        const validationMessage = typeof responseData === 'object' && responseData?.detail?.length
-          ? responseData.detail
+        const responseData = error.response?.data as
+          | {
+              message?: string;
+              detail?: Array<{ loc?: Array<string | number>; msg?: string }> | string;
+            }
+          | string
+          | undefined;
+
+        let detailMessage: string | undefined;
+        if (typeof responseData === 'object' && responseData !== null) {
+          if (Array.isArray(responseData.detail)) {
+            detailMessage = responseData.detail
               .map((issue) => `${issue.loc?.join('.') || 'request'}: ${issue.msg || 'Invalid value'}`)
-              .join('; ')
-          : undefined;
+              .join('; ');
+          } else if (typeof responseData.detail === 'string') {
+            detailMessage = responseData.detail;
+          }
+        }
+
         const message =
           typeof responseData === 'string'
             ? responseData
-            : validationMessage || responseData?.message || 'AI service request failed';
+            : detailMessage || responseData?.message || 'AI service request failed';
 
         throw new HttpException(message, error.response?.status || 502);
       }

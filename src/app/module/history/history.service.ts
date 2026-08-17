@@ -203,10 +203,19 @@ export class HistoryService {
   ): Promise<{ history: HistoryDocument; aiResponse: Record<string, unknown> }> {
     const userObjectId = this.toObjectId(userId, 'Invalid user ID');
 
-    const history = await this.historyModel.findOne({
+    let history = await this.historyModel.findOne({
       user: userObjectId,
       aiSessionId: dto.session_id,
     });
+
+    if (!history) {
+      history = await this.historyModel
+        .findOne({
+          user: userObjectId,
+          'suggestedCities.propertyId': dto.property_id,
+        })
+        .sort({ createdAt: -1 });
+    }
 
     if (!history) {
       throw new HttpException('History session not found', 404);
@@ -235,8 +244,42 @@ export class HistoryService {
       };
     }
 
-    const aiResponse = (await this.historyAiClient.getTourPlan(dto)) as TourPlanApiResponse &
-      Record<string, unknown>;
+    let aiResponse: TourPlanApiResponse & Record<string, unknown>;
+
+    try {
+      aiResponse = (await this.historyAiClient.getTourPlan({
+        ...dto,
+        session_id: history.aiSessionId || dto.session_id,
+      })) as TourPlanApiResponse & Record<string, unknown>;
+    } catch (error) {
+      if (
+        error instanceof HttpException &&
+        typeof error.getResponse() === 'string' &&
+        (error.getResponse() as string).toLowerCase().includes('session not found') &&
+        history.questionnaireAnswers
+      ) {
+        const freshAiRes = (await this.historyAiClient.getSuggestedCities(
+          this.buildAiRecommendationRequest(history.questionnaireAnswers),
+        )) as Record<string, unknown>;
+        const newSessionId = this.asOptionalString(freshAiRes?.session_id);
+
+        if (newSessionId) {
+          history.aiSessionId = newSessionId;
+          await this.historyModel.findByIdAndUpdate(history._id, {
+            $set: { aiSessionId: newSessionId },
+          });
+
+          aiResponse = (await this.historyAiClient.getTourPlan({
+            ...dto,
+            session_id: newSessionId,
+          })) as TourPlanApiResponse & Record<string, unknown>;
+        } else {
+          throw error;
+        }
+      } else {
+        throw error;
+      }
+    }
 
     const stay = this.mapStay(aiResponse.stay);
     const tourPlan = this.mapTourPlan(aiResponse.tour_plan);
