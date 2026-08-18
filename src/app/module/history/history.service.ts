@@ -326,11 +326,19 @@ export class HistoryService {
       session_id: dto.session_id,
       user_instruction: 'Show different destination options.',
     })) as Record<string, unknown>;
+    const freshCities = this.extractSuggestedCities(aiResponse);
+    const mergedCities = [...(history.suggestedCities || [])];
+    freshCities.forEach((city) => {
+      const exists = mergedCities.some((item) =>
+        city.propertyId ? item.propertyId === city.propertyId : item.cityName === city.cityName,
+      );
+      if (!exists) mergedCities.push(city);
+    });
     const updated = await this.historyModel.findByIdAndUpdate(
       history._id,
       {
         $set: {
-          suggestedCities: this.extractSuggestedCities(aiResponse),
+          suggestedCities: mergedCities,
           suggestedCityResponse: aiResponse,
           selectedCity: undefined,
           selectedPropertyId: undefined,
