@@ -1,4 +1,5 @@
 import { Transform, Type } from 'class-transformer';
+import { ApiHideProperty } from '@nestjs/swagger';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -410,6 +411,7 @@ export class VelariIntakeDto {
   @IsEnum(['USD'])
   currency?: 'USD';
 
+  @ApiHideProperty()
   @Validate(VelariIntakeRulesConstraint)
   private readonly _rules?: never;
 }
