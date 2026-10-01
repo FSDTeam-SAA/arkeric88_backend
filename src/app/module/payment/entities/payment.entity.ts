@@ -33,6 +33,8 @@ export enum PaymentAnalysisStatus {
 }
 
 export class PaymentAnalysisRequest {
+  intake?: Record<string, unknown>;
+  /** @deprecated Retained so payments created before the Velari migration remain readable. */
   questions_answers?: Record<string, unknown>;
   preferred_destinations?: string;
   hope_of_this_trip?: string;
@@ -79,14 +81,26 @@ export class Payment {
   @Prop({ trim: true })
   zipCode?: string;
 
-  @Prop({ required: true, unique: true, index: true, trim: true, minlength: 6, maxlength: 6 })
+  @Prop({
+    required: true,
+    unique: true,
+    index: true,
+    trim: true,
+    minlength: 6,
+    maxlength: 6,
+  })
   paymentId: string;
 
   @Prop({ index: true, sparse: true })
   stripePaymentIntentId?: string;
 
   @Prop({
-    type: [{ question: { type: String, required: true }, answer: { type: String, required: true } }],
+    type: [
+      {
+        question: { type: String, required: true },
+        answer: { type: String, required: true },
+      },
+    ],
     default: [],
     _id: false,
   })

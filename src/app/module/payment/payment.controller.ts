@@ -8,6 +8,8 @@ import {
   Post,
   Req,
   UseGuards,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -42,6 +44,13 @@ export class PaymentController {
   @ApiBody({ type: CreatePaymentDto })
   @ApiOkResponse({ type: CreatePaymentResponseDto })
   @UseGuards(AuthGuard('user'))
+  @UsePipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  )
   async createPaymentIntent(
     @Body() dto: CreatePaymentDto,
     @Req() req: Request,

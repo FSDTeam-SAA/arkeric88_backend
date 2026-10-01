@@ -9,7 +9,36 @@ export function handleHttpException(err: HttpException): {
   const statusCode = err.getStatus();
   const response = err.getResponse() as
     | string
-    | { message: string | string[]; error?: string };
+    | {
+        message: string | string[];
+        error?: string;
+        detail?: Array<{ loc?: Array<string | number>; msg?: string }> | string;
+      };
+
+  if (typeof response === 'object' && Array.isArray(response.detail)) {
+    return {
+      statusCode,
+      message:
+        typeof response.message === 'string'
+          ? response.message
+          : 'Validation Error',
+      errorSources: response.detail.map((issue) => ({
+        path: issue.loc?.join('.') || 'request',
+        message: issue.msg || 'Invalid value',
+      })),
+    };
+  }
+
+  if (typeof response === 'object' && typeof response.detail === 'string') {
+    return {
+      statusCode,
+      message:
+        typeof response.message === 'string'
+          ? response.message
+          : 'External Service Error',
+      errorSources: [{ path: 'request', message: response.detail }],
+    };
+  }
 
   if (
     typeof response === 'object' &&

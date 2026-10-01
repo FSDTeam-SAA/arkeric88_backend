@@ -1,6 +1,6 @@
 import { TErrorSource } from '../middlewares/globalErrors.filter';
 
-export function handleSyntaxError(err: SyntaxError): {
+export function handleSyntaxError(_err: SyntaxError): {
   statusCode: number;
   message: string;
   errorSources: TErrorSource[];

@@ -4,6 +4,7 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -14,7 +15,6 @@ import paginationHelper, { IOptions } from 'src/app/helpers/pagenation';
 import sendMailer from 'src/app/helpers/sendMailer';
 import { createPaymentSuccessEmailTemplate } from 'src/app/helpers/template';
 import { HistoryService } from '../history/history.service';
-import { normalizeQuestionnaireAnswers } from '../history/wellness-archetypes';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { PaymentIntentResponseDto } from './dto/payment-response.dto';
 import { IPaymentService } from './payment-service.interface';
@@ -36,7 +36,9 @@ export class PaymentService implements IPaymentService {
     private readonly historyService: HistoryService,
   ) {
     if (!config.stripe.secretKey) {
-      throw new InternalServerErrorException('Stripe secret key is not configured');
+      throw new InternalServerErrorException(
+        'Stripe secret key is not configured',
+      );
     }
 
     this.stripe = new Stripe(config.stripe.secretKey, {
@@ -49,10 +51,22 @@ export class PaymentService implements IPaymentService {
     dto: CreatePaymentDto,
     userId: string,
   ): Promise<PaymentIntentResponseDto> {
-    const { amount, currency = 'usd', description, nameOnCard, email, country, zipCode } = dto;
-    const normalizedQuestionsAnswers = dto.questions_answers
-      ? normalizeQuestionnaireAnswers(dto.questions_answers)
-      : undefined;
+    if (!dto.intake && dto.questions_answers) {
+      throw new UnprocessableEntityException(
+        'The legacy questions_answers payload is no longer supported; send intake',
+      );
+    }
+    const {
+      amount,
+      currency = 'usd',
+      description,
+      nameOnCard,
+      email,
+      country,
+      zipCode,
+    } = dto;
+    const normalizedIntake = dto.intake ? { ...dto.intake } : undefined;
+    const hasAnalysisRequest = Boolean(normalizedIntake);
     const stripeAmount = this.toStripeAmount(amount);
 
     const metadata: Record<string, string> = {};
@@ -77,7 +91,9 @@ export class PaymentService implements IPaymentService {
       );
     } catch (err) {
       this.logger.error('Stripe paymentIntent creation failed', err);
-      throw new InternalServerErrorException('Payment provider error. Please try again.');
+      throw new InternalServerErrorException(
+        'Payment provider error. Please try again.',
+      );
     }
 
     const paymentId = await this.generateUniquePaymentId();
@@ -96,23 +112,27 @@ export class PaymentService implements IPaymentService {
       status: PaymentStatus.PENDING,
       paymentMethod: 'card',
       quiz: dto.quiz ?? [],
-      analysisRequest: normalizedQuestionsAnswers
+      analysisRequest: hasAnalysisRequest
         ? {
-            questions_answers: normalizedQuestionsAnswers,
+            intake: normalizedIntake,
             preferred_destinations: dto.preferred_destinations,
             hope_of_this_trip: dto.hope_of_this_trip,
           }
         : undefined,
-      analysisStatus: normalizedQuestionsAnswers
+      analysisStatus: hasAnalysisRequest
         ? PaymentAnalysisStatus.PENDING
         : PaymentAnalysisStatus.SKIPPED,
     });
 
-    this.logger.log(`PaymentIntent created: ${paymentIntent.id} | DB: ${payment._id}`);
+    this.logger.log(
+      `PaymentIntent created: ${paymentIntent.id} | DB: ${payment._id}`,
+    );
 
     const publishableKey = config.stripe.publicKey;
     if (!publishableKey) {
-      throw new InternalServerErrorException('Stripe publishable key is not configured');
+      throw new InternalServerErrorException(
+        'Stripe publishable key is not configured',
+      );
     }
 
     return {
@@ -129,7 +149,9 @@ export class PaymentService implements IPaymentService {
 
   async handleStripeWebhook(payload: Buffer, signature: string): Promise<void> {
     if (!config.stripe.webhookSecret) {
-      throw new InternalServerErrorException('Stripe webhook secret is not configured');
+      throw new InternalServerErrorException(
+        'Stripe webhook secret is not configured',
+      );
     }
 
     const event = this.constructWebhookEvent(payload, signature);
@@ -139,7 +161,10 @@ export class PaymentService implements IPaymentService {
   async findAll(
     params: IFilterParams = {},
     options: IOptions = {},
-  ): Promise<{ meta: { page: number; limit: number; total: number }; data: PaymentDocument[] }> {
+  ): Promise<{
+    meta: { page: number; limit: number; total: number };
+    data: PaymentDocument[];
+  }> {
     const { page, limit, skip, sortBy, sortOrder } = paginationHelper(options);
     const { searchTerm, ...filterData } = params;
 
@@ -189,7 +214,14 @@ export class PaymentService implements IPaymentService {
   }
 
   buildPaymentFilter(query: Record<string, any>): IFilterParams {
-    return pick(query, ['searchTerm', 'status', 'currency', 'nameOnCard', 'country', 'zipCode']);
+    return pick(query, [
+      'searchTerm',
+      'status',
+      'currency',
+      'nameOnCard',
+      'country',
+      'zipCode',
+    ]);
   }
 
   buildPaginationOptions(query: Record<string, any>): IOptions {
@@ -204,16 +236,27 @@ export class PaymentService implements IPaymentService {
     return payment;
   }
 
-  private constructWebhookEvent(payload: Buffer, signature: string): Stripe.Event {
+  private constructWebhookEvent(
+    payload: Buffer,
+    signature: string,
+  ): Stripe.Event {
     const webhookSecret = config.stripe.webhookSecret;
     if (!webhookSecret) {
-      throw new InternalServerErrorException('Stripe webhook secret is not configured');
+      throw new InternalServerErrorException(
+        'Stripe webhook secret is not configured',
+      );
     }
 
     try {
-      return this.stripe.webhooks.constructEvent(payload, signature, webhookSecret);
+      return this.stripe.webhooks.constructEvent(
+        payload,
+        signature,
+        webhookSecret,
+      );
     } catch (err) {
-      this.logger.warn(`Webhook signature verification failed: ${(err as Error).message}`);
+      this.logger.warn(
+        `Webhook signature verification failed: ${(err as Error).message}`,
+      );
       throw new BadRequestException('Invalid webhook signature');
     }
   }
@@ -235,7 +278,9 @@ export class PaymentService implements IPaymentService {
     const intent = event.data.object as Stripe.PaymentIntent;
 
     if (!intent?.id) {
-      this.logger.warn(`Webhook event "${event.type}" has no payment intent id`);
+      this.logger.warn(
+        `Webhook event "${event.type}" has no payment intent id`,
+      );
       return;
     }
 
@@ -246,7 +291,9 @@ export class PaymentService implements IPaymentService {
     stripePaymentIntentId: string,
     status: PaymentStatus,
   ): Promise<void> {
-    const payment = await this.paymentModel.findOne({ stripePaymentIntentId }).exec();
+    const payment = await this.paymentModel
+      .findOne({ stripePaymentIntentId })
+      .exec();
 
     if (!payment) {
       this.logger.warn(
@@ -255,8 +302,13 @@ export class PaymentService implements IPaymentService {
       return;
     }
 
-    if (payment.status === status && !this.shouldRetryAutoAnalysis(payment, status)) {
-      this.logger.debug(`Payment ${payment._id} already has status "${status}", skipping`);
+    if (
+      payment.status === status &&
+      !this.shouldRetryAutoAnalysis(payment, status)
+    ) {
+      this.logger.debug(
+        `Payment ${payment._id} already has status "${status}", skipping`,
+      );
       return;
     }
 
@@ -264,7 +316,9 @@ export class PaymentService implements IPaymentService {
     if (payment.status !== status) {
       payment.status = status;
       await payment.save();
-      this.logger.log(`Payment ${payment._id} status updated: ${previousStatus} -> ${status}`);
+      this.logger.log(
+        `Payment ${payment._id} status updated: ${previousStatus} -> ${status}`,
+      );
     }
 
     if (status === PaymentStatus.SUCCEEDED) {
@@ -279,13 +333,17 @@ export class PaymentService implements IPaymentService {
         country: payment.country,
         zipCode: payment.zipCode,
         paymentMethod: payment.paymentMethod,
-        paymentDate: new Date(payment.updatedAt ?? payment.createdAt).toISOString(),
+        paymentDate: new Date(
+          payment.updatedAt ?? payment.createdAt,
+        ).toISOString(),
       });
 
       if (payment.email) {
         try {
           await sendMailer(payment.email, 'Payment Confirmation', html);
-          this.logger.log(`Payment confirmation email sent to ${payment.email}`);
+          this.logger.log(
+            `Payment confirmation email sent to ${payment.email}`,
+          );
         } catch (error) {
           this.logger.warn(
             `Failed to send payment confirmation email to ${payment.email}: ${
@@ -308,22 +366,26 @@ export class PaymentService implements IPaymentService {
     return (
       status === PaymentStatus.SUCCEEDED &&
       Boolean(payment.user) &&
-      Boolean(payment.analysisRequest?.questions_answers) &&
+      Boolean(payment.analysisRequest?.intake) &&
       [PaymentAnalysisStatus.PENDING, PaymentAnalysisStatus.FAILED].includes(
         payment.analysisStatus,
       )
     );
   }
 
-  private async runAutoSuggestedCityAnalysis(payment: PaymentDocument): Promise<void> {
-    if (!payment.user || !payment.analysisRequest?.questions_answers) {
+  private async runAutoSuggestedCityAnalysis(
+    payment: PaymentDocument,
+  ): Promise<void> {
+    if (!payment.user || !payment.analysisRequest?.intake) {
       this.logger.debug(
-        `Skipping auto AI trigger for payment ${payment._id}: missing user or questionnaire data`,
+        `Skipping auto AI trigger for payment ${payment._id}: missing user or Velari intake`,
       );
 
       if (payment.analysisStatus !== PaymentAnalysisStatus.SKIPPED) {
         payment.analysisStatus = PaymentAnalysisStatus.SKIPPED;
-        payment.analysisError = 'Missing user or questionnaire data for auto analysis';
+        payment.analysisError = payment.analysisRequest?.questions_answers
+          ? 'Legacy questionnaire cannot be submitted to the Velari API'
+          : 'Missing user or Velari intake for auto analysis';
         await payment.save();
       }
 
@@ -346,11 +408,15 @@ export class PaymentService implements IPaymentService {
       await this.historyService.generateSuggestedCitiesFromPayment(payment);
       payment.analysisStatus = PaymentAnalysisStatus.COMPLETED;
       await payment.save();
-      this.logger.log(`Auto suggested-city analysis completed for payment ${payment._id}`);
+      this.logger.log(
+        `Auto suggested-city analysis completed for payment ${payment._id}`,
+      );
     } catch (error) {
       payment.analysisStatus = PaymentAnalysisStatus.FAILED;
       payment.analysisError =
-        error instanceof Error ? error.message : 'Suggested city analysis failed';
+        error instanceof Error
+          ? error.message
+          : 'Suggested city analysis failed';
       await payment.save();
       this.logger.error(
         `Auto suggested-city analysis failed for payment ${payment._id}`,

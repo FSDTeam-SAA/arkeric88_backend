@@ -4,9 +4,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsArray,
   IsEnum,
-  IsMongoId,
   IsNumber,
-  IsObject,
   IsOptional,
   IsString,
   Min,
@@ -14,10 +12,7 @@ import {
   IsInt,
   IsPositive,
 } from 'class-validator';
-import { Transform, Type } from 'class-transformer';
-
-const emptyStringToUndefined = ({ value }: { value: unknown }) =>
-  value === '' ? undefined : value;
+import { Type } from 'class-transformer';
 
 // ─── Nested DTOs ──────────────────────────────────────────────────────────────
 
@@ -39,12 +34,18 @@ export class UserProfileDto {
   @IsString()
   seeking: string;
 
-  @ApiPropertyOptional({ enum: ['solo', 'couple', 'family', 'group'], example: 'solo' })
+  @ApiPropertyOptional({
+    enum: ['solo', 'couple', 'family', 'group'],
+    example: 'solo',
+  })
   @IsOptional()
   @IsEnum(['solo', 'couple', 'family', 'group'])
   travelStyle?: string;
 
-  @ApiPropertyOptional({ enum: ['spontaneous', 'balanced', 'well_planned'], example: 'well_planned' })
+  @ApiPropertyOptional({
+    enum: ['spontaneous', 'balanced', 'well_planned'],
+    example: 'well_planned',
+  })
   @IsOptional()
   @IsEnum(['spontaneous', 'balanced', 'well_planned'])
   preferredPace?: string;
@@ -80,11 +81,16 @@ export class TravelMatchDto {
   @IsString()
   country: string;
 
-  @ApiProperty({ example: 'Bali offers the perfect balance between luxury and healing.' })
+  @ApiProperty({
+    example: 'Bali offers the perfect balance between luxury and healing.',
+  })
   @IsString()
   description: string;
 
-  @ApiProperty({ example: 94, description: 'Match score as a percentage (0-100)' })
+  @ApiProperty({
+    example: 94,
+    description: 'Match score as a percentage (0-100)',
+  })
   @IsNumber()
   @Min(0)
   matchScore: number;
@@ -100,7 +106,9 @@ export class DayItineraryDto {
   @IsString()
   title: string;
 
-  @ApiProperty({ example: 'Arrive in Bali and settle into your wellness retreat...' })
+  @ApiProperty({
+    example: 'Arrive in Bali and settle into your wellness retreat...',
+  })
   @IsString()
   description: string;
 }
@@ -123,7 +131,10 @@ export class RecommendedJourneyDto {
   @IsString()
   accommodationType?: string;
 
-  @ApiPropertyOptional({ type: [String], example: ['Spa treatments', 'Yoga classes'] })
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['Spa treatments', 'Yoga classes'],
+  })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
@@ -140,7 +151,10 @@ export class RecommendedJourneyDto {
 // ─── Main DTO ─────────────────────────────────────────────────────────────────
 
 export class CreateHistoryDto {
-  @ApiPropertyOptional({ example: '665f1b2c3e4d5f6a7b8c9d0e', description: 'User ID (MongoDB ObjectId)' })
+  @ApiPropertyOptional({
+    example: '665f1b2c3e4d5f6a7b8c9d0e',
+    description: 'User ID (MongoDB ObjectId)',
+  })
   user?: string;
 
   @ApiProperty({ type: UserProfileDto })
@@ -148,7 +162,10 @@ export class CreateHistoryDto {
   @Type(() => UserProfileDto)
   userProfile: UserProfileDto;
 
-  @ApiPropertyOptional({ type: [String], example: ['Nature', 'Wellness', 'Ocean Energy'] })
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['Nature', 'Wellness', 'Ocean Energy'],
+  })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
@@ -167,7 +184,10 @@ export class CreateHistoryDto {
   @Type(() => RecommendedJourneyDto)
   recommendedJourney?: RecommendedJourneyDto;
 
-  @ApiPropertyOptional({ example: 'Leo energy shines brightest when confidence, creativity, and joy are restored.' })
+  @ApiPropertyOptional({
+    example:
+      'Leo energy shines brightest when confidence, creativity, and joy are restored.',
+  })
   @IsOptional()
   @IsString()
   astroInsight?: string;
@@ -180,7 +200,10 @@ export class CreateHistoryDto {
   @IsEnum(['pending', 'suggested_cities_ready', 'completed', 'failed'])
   aiAnalysisStatus?: string;
 
-  @ApiProperty({ example: 999, description: 'Payment amount in USD cents (e.g. 999 = $9.99)' })
+  @ApiProperty({
+    example: 999,
+    description: 'Payment amount in USD cents (e.g. 999 = $9.99)',
+  })
   @IsInt()
   @Min(0)
   paymentAmount: number;
@@ -190,7 +213,10 @@ export class CreateHistoryDto {
   @IsString()
   stripePaymentIntentId?: string;
 
-  @ApiPropertyOptional({ enum: ['unpaid', 'paid', 'refunded'], example: 'unpaid' })
+  @ApiPropertyOptional({
+    enum: ['unpaid', 'paid', 'refunded'],
+    example: 'unpaid',
+  })
   @IsOptional()
   @IsEnum(['unpaid', 'paid', 'refunded'])
   paymentStatus?: string;

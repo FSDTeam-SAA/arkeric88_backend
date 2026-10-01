@@ -1,21 +1,20 @@
-import {
-  HttpException,
-  Injectable,
-  InternalServerErrorException,
-  Logger,
-} from '@nestjs/common';
-import axios, { AxiosError } from 'axios';
+import { HttpException, Injectable, Logger } from '@nestjs/common';
+import axios from 'axios';
 import config from 'src/app/config';
+import { safeErrorMessage } from 'src/app/utils/redact-sensitive-fields';
 
 type SuggestedCityPayload = Record<string, unknown>;
 
 type TourPlanPayload = {
   session_id: string;
-  selected_city: string;
-  property_id: string;
+  destination_id: string;
 };
 
-type RegenerateSuggestedCityPayload = { session_id: string; user_instruction: string };
+type RegenerateSuggestedCityPayload = {
+  session_id: string;
+  user_instruction?: string;
+  intake_updates?: Record<string, unknown>;
+};
 
 type RegenerateTourPlanPayload = {
   activity_session_id: string;
@@ -54,37 +53,40 @@ export class HistoryAiClient {
 
       return data;
     } catch (error) {
-      this.logger.error(`AI request failed for ${url}`, error as Error);
+      // Axios errors retain request config (including the JSON body). Never pass
+      // the whole error object to the logger because Velari free-text fields are private.
+      this.logger.error(
+        `AI request failed for ${url}: ${safeErrorMessage(error)}`,
+      );
 
-      if (error instanceof AxiosError) {
+      if (axios.isAxiosError(error)) {
         const responseData = error.response?.data as
           | {
               message?: string;
-              detail?: Array<{ loc?: Array<string | number>; msg?: string }> | string;
+              detail?:
+                | Array<{ loc?: Array<string | number>; msg?: string }>
+                | string;
             }
           | string
           | undefined;
 
-        let detailMessage: string | undefined;
         if (typeof responseData === 'object' && responseData !== null) {
-          if (Array.isArray(responseData.detail)) {
-            detailMessage = responseData.detail
-              .map((issue) => `${issue.loc?.join('.') || 'request'}: ${issue.msg || 'Invalid value'}`)
-              .join('; ');
-          } else if (typeof responseData.detail === 'string') {
-            detailMessage = responseData.detail;
-          }
+          throw new HttpException(
+            {
+              message: responseData.message || 'AI service request failed',
+              detail: responseData.detail,
+            },
+            error.response?.status || 502,
+          );
         }
 
-        const message =
-          typeof responseData === 'string'
-            ? responseData
-            : detailMessage || responseData?.message || 'AI service request failed';
-
-        throw new HttpException(message, error.response?.status || 502);
+        throw new HttpException(
+          responseData || 'AI service request failed',
+          error.response?.status || 502,
+        );
       }
 
-      throw new InternalServerErrorException('Unable to process AI request');
+      throw new HttpException('Unable to reach AI service', 503);
     }
   }
 }

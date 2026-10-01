@@ -15,6 +15,7 @@ import {
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentCurrency } from '../entities/payment.entity';
+import { VelariIntakeDto } from '../../history/dto/velari-intake.dto';
 
 export class QuizItemDto {
   @ApiProperty({ example: 'What is 2+2?' })
@@ -29,7 +30,10 @@ export class QuizItemDto {
 }
 
 export class CreatePaymentDto {
-  @ApiProperty({ example: 49.99, description: 'Amount in major currency unit (e.g. dollars)' })
+  @ApiProperty({
+    example: 49.99,
+    description: 'Amount in major currency unit (e.g. dollars)',
+  })
   @IsNotEmpty()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.5, { message: 'Minimum payment amount is 0.50' })
@@ -38,7 +42,9 @@ export class CreatePaymentDto {
 
   @ApiPropertyOptional({ enum: PaymentCurrency, default: PaymentCurrency.USD })
   @IsOptional()
-  @IsEnum(PaymentCurrency, { message: 'Currency must be one of: usd, eur, gbp' })
+  @IsEnum(PaymentCurrency, {
+    message: 'Currency must be one of: usd, eur, gbp',
+  })
   currency?: PaymentCurrency;
 
   @ApiPropertyOptional({ example: 'Premium Plan Subscription' })
@@ -62,11 +68,16 @@ export class CreatePaymentDto {
   @Transform(({ value }) => value?.trim().toLowerCase())
   email?: string;
 
-  @ApiPropertyOptional({ example: 'US', description: 'ISO 3166-1 alpha-2 country code' })
+  @ApiPropertyOptional({
+    example: 'US',
+    description: 'ISO 3166-1 alpha-2 country code',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(2)
-  @Matches(/^[A-Z]{2}$/, { message: 'Country must be a valid 2-letter ISO code (e.g. US)' })
+  @Matches(/^[A-Z]{2}$/, {
+    message: 'Country must be a valid 2-letter ISO code (e.g. US)',
+  })
   @Transform(({ value }) => value?.trim().toUpperCase())
   country?: string;
 
@@ -89,7 +100,19 @@ export class CreatePaymentDto {
   quiz?: QuizItemDto[];
 
   @ApiPropertyOptional({
-    description: 'Answers collected from the travel questionnaire.',
+    description:
+      'Validated 11-step Velari travel intake. Preferred over questions_answers.',
+    type: VelariIntakeDto,
+  })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => VelariIntakeDto)
+  intake?: VelariIntakeDto;
+
+  @ApiPropertyOptional({
+    description:
+      'Deprecated legacy questionnaire payload. Requests using it are rejected with 422.',
     example: {
       selected_archetype: 'burned_out_achiever',
       archetype_answers: {

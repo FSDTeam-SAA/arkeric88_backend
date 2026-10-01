@@ -7,16 +7,12 @@ export class RequestTourPlanDto {
   @IsNotEmpty()
   session_id: string;
 
-  @ApiProperty({ example: 'Amalfi' })
-  @IsString()
-  @IsNotEmpty()
-  selected_city: string;
-
   @ApiProperty({
-    example: 'retreat_118',
-    description: 'The exact property_id returned by the suggested-city response.',
+    example: 'PT-AZO',
+    description:
+      'The exact destination_id returned by the latest suggested-city response.',
   })
   @IsString()
   @IsNotEmpty()
-  property_id: string;
+  destination_id: string;
 }

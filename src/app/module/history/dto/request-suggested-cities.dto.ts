@@ -1,14 +1,29 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsNotEmpty,
   IsObject,
   IsOptional,
   IsString,
+  ValidateNested,
 } from 'class-validator';
+import { VelariIntakeDto } from './velari-intake.dto';
 
 export class RequestSuggestedCitiesDto {
-  @ApiProperty({
-    description: 'Answers collected from the frontend questionnaire flow.',
+  @ApiPropertyOptional({
+    description:
+      'Validated 11-step Velari intake. Preferred over questions_answers.',
+    type: VelariIntakeDto,
+  })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => VelariIntakeDto)
+  intake?: VelariIntakeDto;
+
+  @ApiPropertyOptional({
+    description:
+      'Deprecated legacy questionnaire payload. Requests using it are rejected with 422.',
     example: {
       selected_archetype: 'burned_out_achiever',
       archetype_answers: {
@@ -27,8 +42,9 @@ export class RequestSuggestedCitiesDto {
       trip_length_days: 5,
     },
   })
+  @IsOptional()
   @IsObject()
-  questions_answers: Record<string, unknown>;
+  questions_answers?: Record<string, unknown>;
 
   @ApiPropertyOptional({ example: 'europe' })
   @IsOptional()
