@@ -13,7 +13,7 @@ export class RequestSuggestedCitiesDto {
   @ApiPropertyOptional({
     description:
       'Validated 11-step Velari intake. Preferred over questions_answers.',
-    type: VelariIntakeDto,
+    type: () => VelariIntakeDto,
   })
   @IsOptional()
   @IsObject()
