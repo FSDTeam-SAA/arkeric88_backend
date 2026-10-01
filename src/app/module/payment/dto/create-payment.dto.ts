@@ -102,7 +102,7 @@ export class CreatePaymentDto {
   @ApiPropertyOptional({
     description:
       'Validated 11-step Velari travel intake. Preferred over questions_answers.',
-    type: VelariIntakeDto,
+    type: () => VelariIntakeDto,
   })
   @IsOptional()
   @IsObject()
