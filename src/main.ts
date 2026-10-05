@@ -11,6 +11,7 @@ import { join } from 'path';
 import * as fs from 'fs';
 import 'dotenv/config';
 import * as bodyParser from 'body-parser';
+import { getCorsSettings } from './app/config/cors';
 
 dotenv.config();
 
@@ -55,10 +56,7 @@ async function bootstrap() {
   );
 
   app.use(cookieParser());
-  app.enableCors({
-    origin: '*',
-    credentials: true,
-  });
+  app.enableCors(getCorsSettings());
 
   app.setGlobalPrefix('api/v1', {
     exclude: [''],

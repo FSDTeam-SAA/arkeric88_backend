@@ -53,6 +53,7 @@ export class SuggestedCity {
   longitude: number | null;
   numberOfDays: number;
   description: string;
+  primaryFeeling?: string;
   matchScore?: number;
   scoreBreakdown?: Record<string, unknown>;
   matchReasons: string[];
@@ -85,21 +86,24 @@ export class StayDetails {
   priceLevel?: string;
   photos: string[];
   coords?: Coordinates;
-  averageNightlyPrice?: number;
+  averageNightlyPrice?: number | string;
   budgetTier?: string;
   facilities: string[];
   website?: string;
   estimateNote?: string;
   priceStatus?: string;
   availabilityStatus?: string;
+  whySelected?: string;
 }
 
 export class FeelingBlock {
   title: string;
   feelings: Record<string, unknown>[];
   headline: string;
-  intention: string;
+  intention?: string;
   narrative?: string | null;
+  primaryFeeling?: string;
+  explanation?: string;
   markdown?: string;
   supportingExperiences: Record<string, unknown>[];
   note?: string;
@@ -116,23 +120,82 @@ export class BudgetCheck {
   note: string;
 }
 
+export class BookingStatus {
+  readyToBook: boolean;
+  guestLabel: string;
+}
+
+export class PriceBreakdownLine {
+  category: string;
+  label: string;
+  amount: number | null;
+  perPerson?: number | null;
+  basis: string;
+  details: string[];
+}
+
+export class PriceBreakdown {
+  currency?: string;
+  status?: string;
+  appliesTo?: string;
+  lines: PriceBreakdownLine[];
+  total: number | null;
+  totalLabel?: string;
+  totalWithheldReason?: string | null;
+  whatMayVary?: string;
+}
+
+export class ItineraryValidation {
+  status: string;
+  displayReady: boolean;
+  maxLegMinutes?: number;
+  issues: Record<string, unknown>[];
+}
+
 export class TourActivity {
+  itemType?: string;
   activityName: string;
   activityDescription: string;
   activityLocation: string;
   activityAddress: string;
   activityImage: string[];
   activityTime: string;
-  activityCost: number;
+  activityCost?: number;
   distanceFromPreviousKm?: number | null;
   placeId: string | null;
   businessStatus?: string;
-  availabilityNote: string;
+  availabilityNote?: string;
+  whySelected?: string;
+  travelMinutesFromPrevious?: number | null;
+  travelFrom?: string;
+  travelMinutesFromBase?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  priceIndication?: string;
+  rating?: number | null;
+  openSlot?: boolean;
+  transferMinutes?: number | null;
+  transferBufferMinutes?: number | null;
+  includesFerry?: boolean;
+  priceSource?: string;
+  availabilityStatus?: string;
+  viator?: Record<string, unknown>;
 }
 
 export class TourPlanDay {
   day: number;
+  stop?: number;
+  dayType?: string;
   activities: TourActivity[];
+}
+
+export class ItineraryStop {
+  stop: number;
+  baseArea: string;
+  nights: number;
+  firstDay: number;
+  lastDay: number;
+  stay?: StayDetails;
 }
 
 @Schema({ timestamps: true, collection: 'histories' })
@@ -250,14 +313,32 @@ export class HistoryRecord {
   @Prop({ type: [Object], default: [] })
   tourPlan: TourPlanDay[];
 
+  @Prop({ type: [Object], default: [] })
+  stops: ItineraryStop[];
+
   @Prop({ type: Object })
   feelingBlock?: FeelingBlock;
 
   @Prop({ type: Object })
   budgetCheck?: BudgetCheck;
 
-  @Prop()
-  totalCostEstimate?: number;
+  @Prop({ type: Object })
+  bookingStatus?: BookingStatus;
+
+  @Prop({ type: Object })
+  priceBreakdown?: PriceBreakdown;
+
+  @Prop({ type: [String], default: [] })
+  guestNotes: string[];
+
+  @Prop({ type: [Object], default: [] })
+  adjustments: Record<string, unknown>[];
+
+  @Prop({ type: Object })
+  validation?: ItineraryValidation;
+
+  @Prop({ type: Number, default: null })
+  totalCostEstimate?: number | null;
 
   @Prop()
   packingTips?: string;

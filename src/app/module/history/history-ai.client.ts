@@ -42,6 +42,10 @@ export class HistoryAiClient {
     return this.post(config.ai.regenerateTourPlanUrl, payload);
   }
 
+  async recommendTravelDates(payload: Record<string, unknown>) {
+    return this.post(config.ai.recommendTravelDatesUrl, payload);
+  }
+
   private async post<TPayload>(url: string, payload: TPayload) {
     try {
       const { data } = await axios.post(url, payload, {
