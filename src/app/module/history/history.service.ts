@@ -21,13 +21,18 @@ import { RequestSuggestedCitiesDto } from './dto/request-suggested-cities.dto';
 import { RequestTourPlanDto } from './dto/request-tour-plan.dto';
 import { RegenerateSuggestedCitiesDto } from './dto/regenerate-suggested-cities.dto';
 import { RegenerateTourPlanDto } from './dto/regenerate-tour-plan.dto';
+import { RecommendTravelDatesDto } from './dto/recommend-travel-dates.dto';
 import { UpdateHistoryDto } from './dto/update.history.dto';
 import {
   BudgetCheck,
+  BookingStatus,
   Coordinates,
   FeelingBlock,
   HistoryDocument,
   HistoryRecord,
+  ItineraryStop,
+  ItineraryValidation,
+  PriceBreakdown,
   RecommendedJourney,
   StayDetails,
   SuggestedCity,
@@ -60,6 +65,7 @@ type SuggestedCityApiItem = {
   longitude?: number | null;
   number_of_days?: number;
   description?: string;
+  primary_feeling?: string;
   match_score?: number;
   score_breakdown?: Record<string, unknown>;
   match_reasons?: string[];
@@ -93,21 +99,39 @@ type SuggestionResponseDetails = {
 };
 
 type TourActivityApiItem = {
+  item_type?: string;
   activity_name?: string;
   activity_description?: string;
   activity_location?: string;
   activity_address?: string;
   activity_image?: string[];
   activity_time?: string;
-  activity_cost?: number;
+  activity_cost?: number | null;
   distance_from_previous_km?: number | null;
   place_id?: string | null;
   business_status?: string | null;
   availability_note?: string;
+  why_selected?: string;
+  travel_minutes_from_previous?: number | null;
+  travel_from?: string;
+  travel_minutes_from_base?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  price_indication?: string;
+  rating?: number | null;
+  open_slot?: boolean;
+  transfer_minutes?: number | null;
+  transfer_buffer_minutes?: number | null;
+  includes_ferry?: boolean;
+  price_source?: string;
+  availability_status?: string;
+  viator?: Record<string, unknown>;
 };
 
 type TourPlanDayApiItem = {
   day?: number;
+  stop?: number;
+  day_type?: string;
   activities?: TourActivityApiItem[];
 };
 
@@ -119,6 +143,8 @@ type TourPlanApiResponse = {
     title?: string;
     feelings?: Record<string, unknown>[];
     headline?: string;
+    primary_feeling?: string;
+    explanation?: string;
     intention?: string;
     narrative?: string | null;
     markdown?: string;
@@ -133,16 +159,54 @@ type TourPlanApiResponse = {
     price_level?: string;
     photos?: string[];
     coords?: Coordinates;
-    average_nightly_price?: number;
+    average_nightly_price?: number | string;
     budget_tier?: string;
     facilities?: string[];
     website?: string;
     estimate_note?: string;
     price_status?: string;
     availability_status?: string;
+    why_selected?: string;
   };
+  stops?: Array<{
+    stop?: number;
+    base_area?: string;
+    nights?: number;
+    first_day?: number;
+    last_day?: number;
+    stay?: TourPlanApiResponse['stay'];
+  }>;
   tour_plan?: TourPlanDayApiItem[];
-  total_cost_estimate?: number;
+  booking_status?: {
+    ready_to_book?: boolean;
+    guest_label?: string;
+  };
+  price_breakdown?: {
+    currency?: string;
+    status?: string;
+    applies_to?: string;
+    lines?: Array<{
+      category?: string;
+      label?: string;
+      amount?: number | null;
+      per_person?: number | null;
+      basis?: string;
+      details?: string[];
+    }>;
+    total?: number | null;
+    total_label?: string;
+    total_withheld_reason?: string | null;
+    what_may_vary?: string;
+  };
+  total_cost_estimate?: number | null;
+  guest_notes?: string[];
+  adjustments?: Record<string, unknown>[];
+  validation?: {
+    status?: string;
+    display_ready?: boolean;
+    max_leg_minutes?: number;
+    issues?: Record<string, unknown>[];
+  };
   budget_check?: {
     budget_per_night_usd?: number;
     budget_open_ended?: boolean;
@@ -155,6 +219,23 @@ type TourPlanApiResponse = {
   packing_tips?: string;
   travel_tips?: string;
   source?: string;
+};
+
+type TravelDateOptionApi = {
+  label?: string;
+  check_in?: string;
+  check_out?: string;
+  weekdays?: string[];
+  nights?: number;
+  reasons?: string[];
+  considerations?: string[];
+};
+
+type TravelDateRecommendationApiResponse = {
+  recommended?: TravelDateOptionApi;
+  alternatives?: TravelDateOptionApi[];
+  summary?: string;
+  availability_note?: string;
 };
 
 @Injectable()
@@ -268,7 +349,13 @@ export class HistoryService {
               selectedPropertyId: 1,
               activitySessionId: 1,
               stay: 1,
+              stops: 1,
               tourPlan: 1,
+              bookingStatus: 1,
+              priceBreakdown: 1,
+              guestNotes: 1,
+              adjustments: 1,
+              validation: 1,
               totalCostEstimate: 1,
               packingTips: 1,
               travelTips: 1,
@@ -323,6 +410,16 @@ export class HistoryService {
     );
   }
 
+  async recommendTravelDates(
+    dto: RecommendTravelDatesDto,
+  ): Promise<Record<string, unknown>> {
+    this.validateTravelDateRecommendationRequest(dto);
+    const aiResponse = (await this.historyAiClient.recommendTravelDates(
+      dto as unknown as Record<string, unknown>,
+    )) as Record<string, unknown>;
+    return this.normalizeTravelDateRecommendation(aiResponse);
+  }
+
   async generateTourPlan(
     dto: RequestTourPlanDto,
     userId: string,
@@ -363,6 +460,12 @@ export class HistoryService {
           city: history.selectedCity,
           feeling_block: history.feelingBlock,
           budget_check: history.budgetCheck,
+          stops: history.stops,
+          booking_status: history.bookingStatus,
+          price_breakdown: history.priceBreakdown,
+          guest_notes: history.guestNotes,
+          adjustments: history.adjustments,
+          validation: history.validation,
           tour_plan: history.tourPlan,
         },
       };
@@ -488,14 +591,25 @@ export class HistoryService {
     }
 
     const stay = this.mapStay(aiResponse.stay);
+    const stops = this.mapStops(aiResponse.stops);
     const tourPlan = this.mapTourPlan(aiResponse.tour_plan);
     const feelingBlock = this.mapFeelingBlock(aiResponse.feeling_block);
     const budgetCheck = this.mapBudgetCheck(aiResponse.budget_check);
-    if (!stay || !feelingBlock || !budgetCheck) {
+    const bookingStatus = this.mapBookingStatus(aiResponse.booking_status);
+    const priceBreakdown = this.mapPriceBreakdown(aiResponse.price_breakdown);
+    const validation = this.mapValidation(aiResponse.validation);
+    if (!stay || !feelingBlock) {
       throw new InternalServerErrorException(
-        'AI tour-plan response is missing stay, feeling_block or budget_check',
+        'AI tour-plan response is missing stay or feeling_block',
       );
     }
+    this.assertNewItinerarySafety(
+      aiResponse,
+      bookingStatus,
+      priceBreakdown,
+      validation,
+    );
+    const displayReady = validation?.displayReady !== false;
     const selectedCity =
       this.asOptionalString(aiResponse.city) || selectedDestination.cityName;
     const updated = await this.historyModel.findByIdAndUpdate(
@@ -506,24 +620,35 @@ export class HistoryService {
           selectedCity,
           selectedDestinationId: dto.destination_id,
           stay,
+          stops,
           tourPlan,
           feelingBlock,
           budgetCheck,
-          totalCostEstimate: this.asOptionalNumber(
-            aiResponse.total_cost_estimate,
-          ),
+          bookingStatus,
+          priceBreakdown,
+          guestNotes: this.asStringArray(aiResponse.guest_notes),
+          adjustments: this.asRecordArray(aiResponse.adjustments),
+          validation,
+          totalCostEstimate: this.asNullableNumber(aiResponse.total_cost_estimate),
           packingTips: this.asOptionalString(aiResponse.packing_tips),
           travelTips: this.asOptionalString(aiResponse.travel_tips),
           source: this.asOptionalString(aiResponse.source),
           tourPlanResponse: aiResponse,
-          aiAnalysisStatus: 'completed',
-          recommendedJourney: this.buildRecommendedJourney(
-            selectedCity,
-            stay,
-            tourPlan,
-          ),
+          aiAnalysisStatus: displayReady ? 'completed' : 'failed',
+          ...(displayReady
+            ? {
+                recommendedJourney: this.buildRecommendedJourney(
+                  selectedCity,
+                  stay,
+                  tourPlan,
+                ),
+              }
+            : {}),
         },
-        $unset: { selectedPropertyId: 1 },
+        $unset: {
+          selectedPropertyId: 1,
+          ...(displayReady ? {} : { recommendedJourney: 1 }),
+        },
       },
       { new: true },
     );
@@ -677,8 +802,14 @@ export class HistoryService {
           selectedDestinationId: 1,
           activitySessionId: 1,
           stay: 1,
+          stops: 1,
           feelingBlock: 1,
           budgetCheck: 1,
+          bookingStatus: 1,
+          priceBreakdown: 1,
+          guestNotes: 1,
+          adjustments: 1,
+          validation: 1,
           totalCostEstimate: 1,
           packingTips: 1,
           travelTips: 1,
@@ -727,13 +858,24 @@ export class HistoryService {
     }
     const tourPlan = this.mapTourPlan(aiResponse.tour_plan);
     const stay = this.mapStay(aiResponse.stay) || history.stay;
+    const stops = this.mapStops(aiResponse.stops);
     const feelingBlock = this.mapFeelingBlock(aiResponse.feeling_block);
     const budgetCheck = this.mapBudgetCheck(aiResponse.budget_check);
-    if (!feelingBlock || !budgetCheck) {
+    const bookingStatus = this.mapBookingStatus(aiResponse.booking_status);
+    const priceBreakdown = this.mapPriceBreakdown(aiResponse.price_breakdown);
+    const validation = this.mapValidation(aiResponse.validation);
+    if (!feelingBlock) {
       throw new InternalServerErrorException(
-        'Regenerated tour-plan response is missing feeling_block or budget_check',
+        'Regenerated tour-plan response is missing feeling_block',
       );
     }
+    this.assertNewItinerarySafety(
+      aiResponse,
+      bookingStatus,
+      priceBreakdown,
+      validation,
+    );
+    const displayReady = validation?.displayReady !== false;
     const updated = await this.historyModel.findByIdAndUpdate(
       history._id,
       {
@@ -744,23 +886,32 @@ export class HistoryService {
           selectedDestinationId:
             responseDestinationId || history.selectedDestinationId,
           stay,
+          stops,
           tourPlan,
           feelingBlock,
           budgetCheck,
-          totalCostEstimate: this.asOptionalNumber(
-            aiResponse.total_cost_estimate,
-          ),
+          bookingStatus,
+          priceBreakdown,
+          guestNotes: this.asStringArray(aiResponse.guest_notes),
+          adjustments: this.asRecordArray(aiResponse.adjustments),
+          validation,
+          totalCostEstimate: this.asNullableNumber(aiResponse.total_cost_estimate),
           packingTips: this.asOptionalString(aiResponse.packing_tips),
           travelTips: this.asOptionalString(aiResponse.travel_tips),
           source: this.asOptionalString(aiResponse.source),
           tourPlanResponse: aiResponse,
-          aiAnalysisStatus: 'completed',
-          recommendedJourney: this.buildRecommendedJourney(
-            history.selectedCity || '',
-            stay,
-            tourPlan,
-          ),
+          aiAnalysisStatus: displayReady ? 'completed' : 'failed',
+          ...(displayReady
+            ? {
+                recommendedJourney: this.buildRecommendedJourney(
+                  history.selectedCity || '',
+                  stay,
+                  tourPlan,
+                ),
+              }
+            : {}),
         },
+        ...(displayReady ? {} : { $unset: { recommendedJourney: 1 } }),
       },
       { new: true },
     );
@@ -1200,6 +1351,7 @@ export class HistoryService {
         longitude: this.asNullableNumber(item.longitude),
         numberOfDays: this.asOptionalNumber(item.number_of_days) || 0,
         description: this.asOptionalString(item.description) || '',
+        primaryFeeling: this.asOptionalString(item.primary_feeling),
         matchScore: this.asOptionalNumber(item.match_score),
         scoreBreakdown: this.asRecord(item.score_breakdown),
         matchReasons: this.asStringArray(item.match_reasons),
@@ -1240,14 +1392,6 @@ export class HistoryService {
       return undefined;
     }
 
-    const priceStatus = this.asOptionalString(stay.price_status);
-    const availabilityStatus = this.asOptionalString(stay.availability_status);
-    if (!priceStatus || !availabilityStatus) {
-      throw new InternalServerErrorException(
-        'AI stay response is missing price or availability status',
-      );
-    }
-
     return {
       name: this.asOptionalString(stay.name) || '',
       address: this.asOptionalString(stay.address) || '',
@@ -1255,13 +1399,16 @@ export class HistoryService {
       priceLevel: this.asOptionalString(stay.price_level),
       photos: this.asStringArray(stay.photos),
       coords: stay.coords,
-      averageNightlyPrice: this.asOptionalNumber(stay.average_nightly_price),
+      averageNightlyPrice: this.asOptionalNumberOrString(
+        stay.average_nightly_price,
+      ),
       budgetTier: this.asOptionalString(stay.budget_tier),
       facilities: this.asStringArray(stay.facilities),
       website: this.asOptionalString(stay.website),
       estimateNote: this.asOptionalString(stay.estimate_note),
-      priceStatus,
-      availabilityStatus,
+      priceStatus: this.asOptionalString(stay.price_status),
+      availabilityStatus: this.asOptionalString(stay.availability_status),
+      whySelected: this.asOptionalString(stay.why_selected),
     };
   }
 
@@ -1272,6 +1419,8 @@ export class HistoryService {
 
     const headline = this.asOptionalString(block.headline);
     const intention = this.asOptionalString(block.intention);
+    const primaryFeeling = this.asOptionalString(block.primary_feeling);
+    const explanation = this.asOptionalString(block.explanation);
     const alignment = this.asRecord(block.alignment);
     const alignmentStatus = this.asOptionalString(alignment?.status);
     const feelings = this.asRecordArray(block.feelings);
@@ -1282,7 +1431,6 @@ export class HistoryService {
       block.narrative === null ? null : this.asOptionalString(block.narrative);
     if (
       !headline ||
-      !intention ||
       !alignmentStatus ||
       !['aligned', 'revised', 'mismatch', 'not_assessed'].includes(
         alignmentStatus,
@@ -1292,26 +1440,14 @@ export class HistoryService {
         'AI feeling_block is missing required alignment content',
       );
     }
-    if (
-      ['aligned', 'revised'].includes(alignmentStatus) &&
-      (!narrative || supportingExperiences.length < 2)
-    ) {
-      throw new InternalServerErrorException(
-        'Aligned feeling_block requires a narrative and two supporting experiences',
-      );
-    }
-    if (alignmentStatus === 'mismatch' && narrative !== null) {
-      throw new InternalServerErrorException(
-        'Mismatched feeling_block must not contain a narrative',
-      );
-    }
-
     return {
       title: this.asOptionalString(block.title) || '',
       feelings,
       headline,
       intention,
       narrative,
+      primaryFeeling,
+      explanation: explanation || narrative || undefined,
       markdown: this.asOptionalString(block.markdown),
       supportingExperiences,
       note: this.asOptionalString(block.note),
@@ -1368,18 +1504,12 @@ export class HistoryService {
 
     return days.map((day) => ({
       day: this.asOptionalNumber(day.day) || 0,
+      stop: this.asOptionalNumber(day.stop),
+      dayType: this.asOptionalString(day.day_type),
       activities: Array.isArray(day.activities)
         ? day.activities.map((activity) => {
-            const availabilityNote = this.asOptionalString(
-              activity.availability_note,
-            );
-            if (!availabilityNote) {
-              throw new InternalServerErrorException(
-                'AI tour-plan activity is missing availability_note',
-              );
-            }
-
             return {
+              itemType: this.asOptionalString(activity.item_type),
               activityName: this.asOptionalString(activity.activity_name) || '',
               activityDescription:
                 this.asOptionalString(activity.activity_description) || '',
@@ -1389,17 +1519,449 @@ export class HistoryService {
                 this.asOptionalString(activity.activity_address) || '',
               activityImage: this.asStringArray(activity.activity_image),
               activityTime: this.asOptionalString(activity.activity_time) || '',
-              activityCost: this.asOptionalNumber(activity.activity_cost) || 0,
+              activityCost: this.asOptionalNumber(activity.activity_cost),
               distanceFromPreviousKm: this.asOptionalNumber(
                 activity.distance_from_previous_km,
               ),
               placeId: this.asOptionalString(activity.place_id) || null,
               businessStatus: this.asOptionalString(activity.business_status),
-              availabilityNote,
+              availabilityNote: this.asOptionalString(activity.availability_note),
+              whySelected: this.asOptionalString(activity.why_selected),
+              travelMinutesFromPrevious: this.asNullableNumber(
+                activity.travel_minutes_from_previous,
+              ),
+              travelFrom: this.asOptionalString(activity.travel_from),
+              travelMinutesFromBase: this.asNullableNumber(
+                activity.travel_minutes_from_base,
+              ),
+              latitude: this.asNullableNumber(activity.latitude),
+              longitude: this.asNullableNumber(activity.longitude),
+              priceIndication: this.asOptionalString(activity.price_indication),
+              rating: this.asNullableNumber(activity.rating),
+              openSlot:
+                typeof activity.open_slot === 'boolean'
+                  ? activity.open_slot
+                  : undefined,
+              transferMinutes: this.asNullableNumber(activity.transfer_minutes),
+              transferBufferMinutes: this.asNullableNumber(
+                activity.transfer_buffer_minutes,
+              ),
+              includesFerry:
+                typeof activity.includes_ferry === 'boolean'
+                  ? activity.includes_ferry
+                  : undefined,
+              priceSource: this.asOptionalString(activity.price_source),
+              availabilityStatus: this.asOptionalString(
+                activity.availability_status,
+              ),
+              viator: this.asRecord(activity.viator),
             };
           })
         : [],
     }));
+  }
+
+  private mapStops(
+    stops?: TourPlanApiResponse['stops'],
+  ): ItineraryStop[] {
+    if (!Array.isArray(stops)) return [];
+
+    return stops.map((stop) => ({
+      stop: this.asOptionalNumber(stop.stop) || 0,
+      baseArea: this.asOptionalString(stop.base_area) || '',
+      nights: this.asOptionalNumber(stop.nights) || 0,
+      firstDay: this.asOptionalNumber(stop.first_day) || 0,
+      lastDay: this.asOptionalNumber(stop.last_day) || 0,
+      stay: this.mapStay(stop.stay),
+    }));
+  }
+
+  private mapBookingStatus(
+    status?: TourPlanApiResponse['booking_status'],
+  ): BookingStatus | undefined {
+    if (!status || typeof status.ready_to_book !== 'boolean') return undefined;
+
+    return {
+      readyToBook: status.ready_to_book,
+      guestLabel: this.asOptionalString(status.guest_label) || '',
+    };
+  }
+
+  private mapPriceBreakdown(
+    breakdown?: TourPlanApiResponse['price_breakdown'],
+  ): PriceBreakdown | undefined {
+    if (!breakdown) return undefined;
+
+    return {
+      currency: this.asOptionalString(breakdown.currency),
+      status: this.asOptionalString(breakdown.status),
+      appliesTo: this.asOptionalString(breakdown.applies_to),
+      lines: Array.isArray(breakdown.lines)
+        ? breakdown.lines.map((line) => ({
+            category: this.asOptionalString(line.category) || '',
+            label: this.asOptionalString(line.label) || '',
+            amount: this.asNullableNumber(line.amount),
+            perPerson: this.asNullableNumber(line.per_person),
+            basis: this.asOptionalString(line.basis) || '',
+            details: this.asStringArray(line.details),
+          }))
+        : [],
+      total: this.asNullableNumber(breakdown.total),
+      totalLabel: this.asOptionalString(breakdown.total_label),
+      totalWithheldReason:
+        breakdown.total_withheld_reason === null
+          ? null
+          : this.asOptionalString(breakdown.total_withheld_reason),
+      whatMayVary: this.asOptionalString(breakdown.what_may_vary),
+    };
+  }
+
+  private mapValidation(
+    validation?: TourPlanApiResponse['validation'],
+  ): ItineraryValidation | undefined {
+    if (!validation) return undefined;
+    const status = this.asOptionalString(validation.status);
+    if (!status || typeof validation.display_ready !== 'boolean') return undefined;
+
+    return {
+      status,
+      displayReady: validation.display_ready,
+      maxLegMinutes: this.asOptionalNumber(validation.max_leg_minutes),
+      issues: this.asRecordArray(validation.issues),
+    };
+  }
+
+  private assertNewItinerarySafety(
+    response: TourPlanApiResponse,
+    bookingStatus: BookingStatus | undefined,
+    priceBreakdown: PriceBreakdown | undefined,
+    validation: ItineraryValidation | undefined,
+  ): void {
+    const isNewContract = Boolean(
+      response.validation ||
+        response.price_breakdown ||
+        response.booking_status ||
+        response.stops,
+    );
+    if (!isNewContract) return;
+
+    if (!validation) {
+      throw new InternalServerErrorException(
+        'New itinerary responses must include validation.status and validation.display_ready',
+      );
+    }
+    if (!['passed', 'passed_with_warnings', 'failed'].includes(validation.status)) {
+      throw new InternalServerErrorException(
+        'AI itinerary validation has an invalid status',
+      );
+    }
+    if (
+      (validation.status === 'failed' && validation.displayReady) ||
+      (validation.status !== 'failed' && !validation.displayReady)
+    ) {
+      throw new InternalServerErrorException(
+        'AI itinerary validation status and display_ready disagree',
+      );
+    }
+
+    if (!bookingStatus) {
+      throw new InternalServerErrorException(
+        'New itinerary responses must include booking_status',
+      );
+    }
+    if (bookingStatus.readyToBook) {
+      throw new InternalServerErrorException(
+        'booking_status.ready_to_book must remain false until live booking verification is available',
+      );
+    }
+    this.assertItineraryStructure(response);
+
+    if (!priceBreakdown) {
+      throw new InternalServerErrorException(
+        'New itinerary responses must include price_breakdown',
+      );
+    }
+    if (!priceBreakdown.lines.length) {
+      throw new InternalServerErrorException(
+        'price_breakdown must include at least one line',
+      );
+    }
+
+    const hasMissingAmount = priceBreakdown.lines.some(
+      (line) => line.amount === null,
+    );
+    const totalCostEstimate = this.asNullableNumber(
+      response.total_cost_estimate,
+    );
+    if (hasMissingAmount) {
+      if (
+        priceBreakdown.total !== null ||
+        totalCostEstimate !== null ||
+        !priceBreakdown.totalWithheldReason
+      ) {
+        throw new InternalServerErrorException(
+          'A price breakdown with missing amounts must withhold both totals and explain why',
+        );
+      }
+      return;
+    }
+
+    if (priceBreakdown.total === null || totalCostEstimate === null) {
+      throw new InternalServerErrorException(
+        'A complete price breakdown must include price_breakdown.total and total_cost_estimate',
+      );
+    }
+
+    const lineTotalCents = priceBreakdown.lines.reduce(
+      (sum, line) => sum + Math.round((line.amount || 0) * 100),
+      0,
+    );
+    const breakdownTotalCents = Math.round(priceBreakdown.total * 100);
+    const estimateTotalCents = Math.round(totalCostEstimate * 100);
+    if (
+      lineTotalCents !== breakdownTotalCents ||
+      breakdownTotalCents !== estimateTotalCents
+    ) {
+      throw new InternalServerErrorException(
+        'price_breakdown.total and total_cost_estimate must exactly equal the sum of priced lines',
+      );
+    }
+  }
+
+  private assertItineraryStructure(response: TourPlanApiResponse): void {
+    if (!Array.isArray(response.stops) || !response.stops.length) {
+      throw new InternalServerErrorException(
+        'New itinerary responses must include at least one stop',
+      );
+    }
+
+    const stopIds = new Set<number>();
+    for (const [index, stop] of response.stops.entries()) {
+      const stopNumber = this.asOptionalNumber(stop.stop);
+      const nights = this.asOptionalNumber(stop.nights);
+      const firstDay = this.asOptionalNumber(stop.first_day);
+      const lastDay = this.asOptionalNumber(stop.last_day);
+      if (
+        stopNumber !== index + 1 ||
+        !this.asOptionalString(stop.base_area) ||
+        !nights ||
+        !firstDay ||
+        !lastDay ||
+        lastDay - firstDay + 1 !== nights ||
+        !stop.stay ||
+        !this.asOptionalString(stop.stay.why_selected)
+      ) {
+        throw new InternalServerErrorException(
+          'Every stop must have a sequential number, base, stay, nights, day range, and why_selected',
+        );
+      }
+      stopIds.add(stopNumber);
+    }
+
+    if (!Array.isArray(response.tour_plan) || !response.tour_plan.length) {
+      throw new InternalServerErrorException(
+        'New itinerary responses must include a tour_plan',
+      );
+    }
+
+    const firstDayByStop = new Map<number, number>();
+    for (const day of response.tour_plan) {
+      const dayNumber = this.asOptionalNumber(day.day);
+      const stopNumber = this.asOptionalNumber(day.stop);
+      const dayType = this.asOptionalString(day.day_type);
+      if (
+        !dayNumber ||
+        !stopNumber ||
+        !stopIds.has(stopNumber) ||
+        !dayType ||
+        !['standard', 'transfer'].includes(dayType) ||
+        !Array.isArray(day.activities)
+      ) {
+        throw new InternalServerErrorException(
+          'Every itinerary day must have a valid stop, day_type, and activities list',
+        );
+      }
+
+      const firstDay = firstDayByStop.get(stopNumber);
+      if (firstDay === undefined || dayNumber < firstDay) {
+        firstDayByStop.set(stopNumber, dayNumber);
+      }
+      this.assertItineraryActivities(day.activities, dayType);
+    }
+
+    for (const stop of response.stops.slice(1)) {
+      const stopNumber = this.asOptionalNumber(stop.stop)!;
+      const firstDay = firstDayByStop.get(stopNumber);
+      if (firstDay !== this.asOptionalNumber(stop.first_day)) {
+        throw new InternalServerErrorException(
+          'Each stop first_day must match its first planned itinerary day',
+        );
+      }
+      const transferDay = response.tour_plan.find(
+        (day) =>
+          this.asOptionalNumber(day.stop) === stopNumber &&
+          this.asOptionalNumber(day.day) === firstDay,
+      );
+      if (!transferDay || transferDay.day_type !== 'transfer') {
+        throw new InternalServerErrorException(
+          'The first itinerary day at every stop after the first must be a transfer day',
+        );
+      }
+    }
+  }
+
+  private assertItineraryActivities(
+    activities: TourActivityApiItem[],
+    dayType: string,
+  ): void {
+    const validItemTypes = new Set(['experience', 'meal', 'transfer', 'free_time']);
+    let hasTransfer = false;
+
+    for (const activity of activities) {
+      const itemType = this.asOptionalString(activity.item_type);
+      if (!itemType || !validItemTypes.has(itemType)) {
+        throw new InternalServerErrorException(
+          'Every itinerary activity must have a valid item_type',
+        );
+      }
+      if (
+        (itemType === 'experience' ||
+          (itemType === 'meal' && activity.open_slot !== true)) &&
+        !this.asOptionalString(activity.why_selected)
+      ) {
+        throw new InternalServerErrorException(
+          'Every experience and planned meal must include why_selected',
+        );
+      }
+      if (
+        itemType === 'experience' ||
+        (itemType === 'meal' && activity.open_slot !== true)
+      ) {
+        const fromPrevious = this.asOptionalNumber(
+          activity.travel_minutes_from_previous,
+        );
+        const fromBase = this.asOptionalNumber(activity.travel_minutes_from_base);
+        if (
+          fromPrevious === undefined ||
+          fromBase === undefined ||
+          fromPrevious > 60 ||
+          fromBase > 60
+        ) {
+          throw new InternalServerErrorException(
+            'Every experience and planned meal must be within 60 minutes of both the base and previous stop',
+          );
+        }
+      }
+
+      if (itemType === 'transfer') {
+        hasTransfer = true;
+        if (
+          this.asOptionalNumber(activity.transfer_minutes) === undefined ||
+          this.asOptionalNumber(activity.transfer_buffer_minutes) === undefined ||
+          typeof activity.includes_ferry !== 'boolean'
+        ) {
+          throw new InternalServerErrorException(
+            'Transfer activities must include transfer_minutes, transfer_buffer_minutes, and includes_ferry',
+          );
+        }
+      }
+
+      const viator = this.asRecord(activity.viator);
+      if (!viator) continue;
+      if (
+        itemType !== 'experience' ||
+        !this.asOptionalString(viator.product_code) ||
+        !this.asOptionalString(viator.title) ||
+        !this.asOptionalString(viator.booking_url) ||
+        activity.availability_status !== 'SCHEDULED' ||
+        !['viator_schedule', 'viator_from_price'].includes(
+          activity.price_source || '',
+        )
+      ) {
+        throw new InternalServerErrorException(
+          'Viator experiences must be scheduled experiences with product, title, booking URL, and Viator price source',
+        );
+      }
+    }
+
+    if (dayType === 'transfer' && !hasTransfer) {
+      throw new InternalServerErrorException(
+        'Transfer days must include a transfer activity',
+      );
+    }
+  }
+
+  private validateTravelDateRecommendationRequest(
+    dto: RecommendTravelDatesDto,
+  ): void {
+    const hasEarliest = Boolean(dto.earliest_check_in);
+    const hasLatest = Boolean(dto.latest_check_out);
+    if (hasEarliest !== hasLatest) {
+      throw new UnprocessableEntityException(
+        'earliest_check_in and latest_check_out must be sent together',
+      );
+    }
+    if (!hasEarliest || !dto.earliest_check_in || !dto.latest_check_out) return;
+
+    const earliest = Date.parse(`${dto.earliest_check_in}T00:00:00.000Z`);
+    const latest = Date.parse(`${dto.latest_check_out}T00:00:00.000Z`);
+    const windowNights = (latest - earliest) / 86_400_000;
+    if (!Number.isFinite(windowNights) || windowNights < dto.trip_nights) {
+      throw new UnprocessableEntityException(
+        'The requested date range must be at least as long as trip_nights',
+      );
+    }
+  }
+
+  private normalizeTravelDateRecommendation(
+    aiResponse: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const response = (this.asRecord(aiResponse.response) ||
+      aiResponse) as TravelDateRecommendationApiResponse;
+    const recommended = this.mapTravelDateOption(response.recommended, 'recommended');
+    const summary = this.asOptionalString(response.summary);
+    const availabilityNote = this.asOptionalString(response.availability_note);
+    if (!summary || !availabilityNote) {
+      throw new InternalServerErrorException(
+        'AI travel-date response is missing summary or availability_note',
+      );
+    }
+
+    return {
+      recommended,
+      alternatives: Array.isArray(response.alternatives)
+        ? response.alternatives
+            .slice(0, 2)
+            .map((option) => this.mapTravelDateOption(option, 'alternative'))
+        : [],
+      summary,
+      availabilityNote,
+    };
+  }
+
+  private mapTravelDateOption(
+    option: TravelDateOptionApi | undefined,
+    kind: 'recommended' | 'alternative',
+  ): Record<string, unknown> {
+    const label = this.asOptionalString(option?.label);
+    const checkIn = this.asOptionalString(option?.check_in);
+    const checkOut = this.asOptionalString(option?.check_out);
+    const nights = this.asOptionalNumber(option?.nights);
+    if (!label || !checkIn || !checkOut || nights === undefined) {
+      throw new InternalServerErrorException(
+        `AI ${kind} travel-date option is missing a label, dates, or nights`,
+      );
+    }
+
+    return {
+      label,
+      checkIn,
+      checkOut,
+      weekdays: this.asStringArray(option?.weekdays),
+      nights,
+      reasons: this.asStringArray(option?.reasons),
+      considerations: this.asStringArray(option?.considerations),
+    };
   }
 
   private buildRecommendedJourney(
@@ -1575,6 +2137,14 @@ export class HistoryService {
           Number.isFinite(Number(value))
         ? Number(value)
         : undefined;
+  }
+
+  private asOptionalNumberOrString(
+    value: unknown,
+  ): number | string | undefined {
+    const numberValue = this.asOptionalNumber(value);
+    if (numberValue !== undefined) return numberValue;
+    return this.asOptionalString(value);
   }
 
   private ensureValidObjectId(id: string, message: string) {

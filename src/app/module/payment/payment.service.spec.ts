@@ -14,6 +14,6 @@ describe('PaymentService Velari migration guard', () => {
         },
         '507f1f77bcf86cd799439011',
       ),
-    ).rejects.toMatchObject<HttpException>({ status: 422 });
+    ).rejects.toMatchObject<HttpException>({ status: 422 } as never);
   });
 });

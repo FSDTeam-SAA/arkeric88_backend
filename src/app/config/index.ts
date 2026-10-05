@@ -63,6 +63,7 @@ export default {
     tourPlanUrl: joinUrl(aiBaseUrl, 'get_tour_plan'),
     regenerateSuggestedCityUrl: joinUrl(aiBaseUrl, 'regenerate_suggested_city'),
     regenerateTourPlanUrl: joinUrl(aiBaseUrl, 'regenerate_tour_plan'),
+    recommendTravelDatesUrl: joinUrl(aiBaseUrl, 'recommend_travel_dates'),
     timeoutMs: Number(process.env.AI_REQUEST_TIMEOUT_MS || 60000),
   },
   twilio: {
