@@ -39,7 +39,9 @@ describe('Velari history HTTP contract (e2e)', () => {
       return { accepted: dto };
     }),
     generateTourPlan: jest.fn(async (dto) => ({ accepted: dto })),
+    recommendTravelDates: jest.fn(async (dto) => ({ accepted: dto })),
     regenerateSuggestedCities: jest.fn(async (dto) => ({ accepted: dto })),
+    getMySingleHistory: jest.fn(async (id) => ({ _id: id })),
   };
 
   beforeAll(async () => {
@@ -81,6 +83,10 @@ describe('Velari history HTTP contract (e2e)', () => {
   const post = (path: string) =>
     request(app.getHttpServer())
       .post(`/api/v1/history/${path}`)
+      .set('Authorization', 'Bearer test-token');
+  const get = (path: string) =>
+    request(app.getHttpServer())
+      .get(`/api/v1/history/${path}`)
       .set('Authorization', 'Bearer test-token');
 
   it('accepts the new Velari intake contract', async () => {
@@ -125,6 +131,57 @@ describe('Velari history HTTP contract (e2e)', () => {
     expect(historyService.generateTourPlan).toHaveBeenCalledTimes(1);
     expect(historyService.generateTourPlan).toHaveBeenCalledWith(
       { session_id: 'session-1', destination_id: 'PT-AZO' },
+      '507f1f77bcf86cd799439011',
+    );
+  });
+
+  it('accepts flexible timing for date recommendations without a lodging budget', async () => {
+    const { budget_per_night: _budget, ...dateRecommendationIntake } =
+      validIntake;
+
+    await post('recommend-travel-dates')
+      .send({
+        ...dateRecommendationIntake,
+        earliest_check_in: '2027-05-01',
+        latest_check_out: '2027-05-15',
+      })
+      .expect(200);
+
+    expect(historyService.recommendTravelDates).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trip_nights: 5,
+        travel_timing: 'flexible',
+        earliest_check_in: '2027-05-01',
+        latest_check_out: '2027-05-15',
+      }),
+    );
+  });
+
+  it('rejects exact dates and a lodging budget for date recommendations', async () => {
+    const { budget_per_night: _budget, ...dateRecommendationIntake } =
+      validIntake;
+
+    await post('recommend-travel-dates')
+      .send({
+        ...dateRecommendationIntake,
+        travel_timing: 'exact_dates',
+        check_in_date: '2027-05-01',
+        check_out_date: '2027-05-06',
+      })
+      .expect(400);
+
+    await post('recommend-travel-dates')
+      .send({ ...dateRecommendationIntake, budget_per_night: 400 })
+      .expect(400);
+
+    expect(historyService.recommendTravelDates).not.toHaveBeenCalled();
+  });
+
+  it('reopens a saved itinerary by its history ID for the eye icon', async () => {
+    await get('my/507f1f77bcf86cd799439012').expect(200);
+
+    expect(historyService.getMySingleHistory).toHaveBeenCalledWith(
+      '507f1f77bcf86cd799439012',
       '507f1f77bcf86cd799439011',
     );
   });

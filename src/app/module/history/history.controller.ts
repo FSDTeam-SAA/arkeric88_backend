@@ -28,6 +28,7 @@ import { RequestSuggestedCitiesDto } from './dto/request-suggested-cities.dto';
 import { RequestTourPlanDto } from './dto/request-tour-plan.dto';
 import { RegenerateSuggestedCitiesDto } from './dto/regenerate-suggested-cities.dto';
 import { RegenerateTourPlanDto } from './dto/regenerate-tour-plan.dto';
+import { RecommendTravelDatesDto } from './dto/recommend-travel-dates.dto';
 import { UpdateHistoryDto } from './dto/update.history.dto';
 import { HistoryService } from './history.service';
 
@@ -89,6 +90,30 @@ export class HistoryController {
     };
   }
 
+  @Post('recommend-travel-dates')
+  @ApiOperation({
+    summary: 'Recommend travel dates for flexible or month/season timing',
+    description:
+      'Uses the step 1-10 intake without a lodging budget. Exact dates are intentionally rejected because this endpoint proposes dates.',
+  })
+  @ApiBearerAuth('access-token')
+  @UseGuards(AuthGuard('user'))
+  @UsePipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  )
+  @HttpCode(HttpStatus.OK)
+  async recommendTravelDates(@Body() dto: RecommendTravelDatesDto) {
+    const result = await this.historyService.recommendTravelDates(dto);
+    return {
+      message: 'Travel dates recommended successfully',
+      data: result,
+    };
+  }
+
   @Post('tour-plan')
   @ApiOperation({
     summary: 'Get full AI tour plan for a selected city',
@@ -111,7 +136,10 @@ export class HistoryController {
       req.user!.id,
     );
     return {
-      message: 'Tour plan generated successfully',
+      message:
+        result.history?.validation?.displayReady === false
+          ? 'Tour plan needs regeneration before it can be shown'
+          : 'Tour plan generated successfully',
       data: result,
     };
   }
@@ -159,7 +187,13 @@ export class HistoryController {
       dto,
       req.user!.id,
     );
-    return { message: 'Tour plan regenerated successfully', data: result };
+    return {
+      message:
+        result.history?.validation?.displayReady === false
+          ? 'Tour plan still needs regeneration before it can be shown'
+          : 'Tour plan regenerated successfully',
+      data: result,
+    };
   }
 
   @Get()
@@ -309,6 +343,8 @@ export class HistoryController {
   @Get('my/:id')
   @ApiOperation({
     summary: 'Get a single history record of the authenticated user',
+    description:
+      'Use this stable Mongo history ID to reopen a saved itinerary from Search History.',
   })
   @ApiBearerAuth('access-token')
   @ApiParam({

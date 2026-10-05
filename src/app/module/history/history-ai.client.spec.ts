@@ -34,7 +34,7 @@ describe('HistoryAiClient errors', () => {
           undefined,
           undefined,
           undefined,
-          response,
+          response as never,
         ),
       );
 
@@ -60,6 +60,6 @@ describe('HistoryAiClient errors', () => {
 
     await expect(
       client.getSuggestedCities({ private: 'value' }),
-    ).rejects.toMatchObject<HttpException>({ status: 503 });
+    ).rejects.toMatchObject<HttpException>({ status: 503 } as never);
   });
 });

@@ -1,245 +1,67 @@
-# Frontend Migration Guide: Velari Travel Flow
+# Frontend Integration Guide: Velari Travel Flow
 
-This document lists the frontend changes required for the updated payment, destination suggestion, and tour-plan APIs.
+This guide describes the normalized Nest API response under `data.history`.
+Use it as the frontend contract. Do not render or build UI state from the
+stored raw upstream fields (`suggestedCityResponse` and `tourPlanResponse`).
 
-## 1. Required frontend changes
+All endpoints use the `/api/v1` prefix and require the existing bearer access
+token unless noted otherwise. The API currently permits all origins without
+credentials. It uses bearer tokens, not cookie authentication.
 
-| Area                    | Remove                                              | Use instead                                                                               |
-| ----------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Travel form payload     | `questions_answers` and wellness-archetype payloads | `intake`                                                                                  |
-| Destination identity    | `property_id` / `propertyId`                        | `destination_id` in requests and `destinationId` in stored history responses              |
-| Suggested-result state  | Assuming every request returns cities               | Handle `matchStatus: "matched"` and `matchStatus: "no_valid_result"`                      |
-| Suggestion regeneration | Sending only a text instruction                     | Optionally send partial `intake_updates`                                                  |
-| Tour-plan UI            | Basic stay and activity fields only                 | Render `feelingBlock`, `budgetCheck`, stay verification, and activity verification fields |
-| Error display           | One generic message                                 | Read `message` and `errorSources[]`                                                       |
+## 1. Guest-display boundary
 
-All authenticated requests require the existing bearer access token. The API prefix remains `/api/v1`.
+Render only the guest-safe fields below. These fields may still exist in a
+stored history document for audit or application control, but must not be
+rendered to travelers:
 
-## 2. Intake contract
+- `validation` and its issue details. Use only `validation.displayReady` to
+  decide whether to show the itinerary or offer regeneration.
+- `adjustments`; their guest-safe wording is already in `guestNotes`.
+- `bookingStatus.reasons` (not included in normalized responses).
+- `budgetCheck`, `placeId`, `businessStatus`, coordinates, raw verification,
+  evidence, scores, restriction checks, and distance checks.
+- `suggestedCityResponse` and `tourPlanResponse`.
 
-Use this type as the single frontend form model. Do not send fields that are hidden or not applicable to the current selections.
+When `history.validation?.displayReady === false` or
+`history.aiAnalysisStatus === 'failed'`, do not show a finished itinerary.
+Show a clear regenerate action using `activitySessionId`.
 
-```ts
-type Restriction =
-  | 'mobility_accessibility'
-  | 'food_dietary'
-  | 'no_long_drives'
-  | 'no_intense_activity'
-  | 'no_water_activities'
-  | 'avoid_extreme_heat'
-  | 'avoid_cold_weather'
-  | 'other';
+## 2. Destination suggestions
 
-type RestrictionSeverity = 'must_avoid' | 'prefer_avoid';
-
-interface VelariIntake {
-  recent_feelings: Array<
-    | 'stretched_thin'
-    | 'stuck_in_routine'
-    | 'disconnected'
-    | 'curious'
-    | 'energized'
-    | 'turning_point'
-    | 'content_ready'
-    | 'something_else'
-  >; // 1-2 unique values
-  recent_feelings_other?: string; // required only for "something_else"
-
-  trip_goals: Array<
-    | 'restoration'
-    | 'connection'
-    | 'discovery'
-    | 'adventure'
-    | 'inspiration'
-    | 'celebration'
-    | 'reflection'
-    | 'growth'
-  >; // 1-2 unique values
-
-  trip_prompt:
-    | 'need_a_break'
-    | 'time_with_someone'
-    | 'celebrating'
-    | 'curious_to_explore'
-    | 'ready_for_change'
-    | 'change_of_scenery'
-    | 'no_particular_reason'
-    | 'something_else';
-  trip_prompt_other?: string; // required only for "something_else"
-
-  preferred_moments: Array<
-    | 'food_drinks'
-    | 'art_history_culture'
-    | 'nature_wildlife'
-    | 'beaches_water'
-    | 'movement_adventure'
-    | 'quiet_privacy'
-    | 'meeting_people'
-    | 'spa_wellness'
-    | 'music_nightlife'
-    | 'learning_making'
-  >; // 1-3 unique values
-
-  preferred_environments: Array<
-    | 'coast'
-    | 'mountains'
-    | 'forest_jungle'
-    | 'desert'
-    | 'countryside'
-    | 'small_town'
-    | 'vibrant_city'
-    | 'surprise_me'
-  >; // 1-2; "surprise_me" must be the only value
-
-  trip_pace: 'mostly_open' | 'one_highlight' | 'balanced' | 'full_days';
-  travel_party: 'solo' | 'couple' | 'group' | 'family';
-  party_adults?: number; // 1-30
-  party_children?: number; // 0-20
-  party_rooms?: number; // 1-20
-  party_child_ages?: number[]; // one age per child, each 0-17
-
-  activity_restrictions?: Restriction[];
-  restriction_severity?: Partial<Record<Restriction, RestrictionSeverity>>;
-  restriction_notes?: string;
-
-  departure_location: string;
-  departure_latitude?: number;
-  departure_longitude?: number;
-  departure_country?: string;
-  travel_distance: 'nearby' | 'manageable_flight' | 'anywhere';
-
-  travel_timing: 'exact_dates' | 'flexible' | 'month_season';
-  check_in_date?: string; // YYYY-MM-DD; exact_dates only
-  check_out_date?: string; // YYYY-MM-DD; exact_dates only
-  travel_period?:
-    | 'spring'
-    | 'summer'
-    | 'autumn'
-    | 'winter'
-    | 'january'
-    | 'february'
-    | 'march'
-    | 'april'
-    | 'may'
-    | 'june'
-    | 'july'
-    | 'august'
-    | 'september'
-    | 'october'
-    | 'november'
-    | 'december';
-  trip_nights?: number; // 1-90
-
-  budget_per_night: number; // USD 100-7000
-  currency?: 'USD';
-}
-```
-
-Form rules:
-
-- Send latitude and longitude together, or omit both.
-- For `exact_dates`, send both dates. Check-in cannot be in the past, check-out must be later, and `trip_nights` must match the date difference when supplied.
-- For `month_season`, send `travel_period`. Do not send dates.
-- Each selected restriction must have a severity. Remove its severity when the restriction is deselected.
-- For `solo`, use one adult and no children. Room count cannot exceed the total traveller count.
-
-## 3. Payment and automatic suggestion flow
-
-### Create payment intent
-
-`POST /api/v1/payments`
-
-```json
-{
-  "amount": 49.99,
-  "currency": "usd",
-  "intake": {
-    "recent_feelings": ["curious"],
-    "trip_goals": ["discovery"],
-    "trip_prompt": "curious_to_explore",
-    "preferred_moments": ["nature_wildlife", "food_drinks"],
-    "preferred_environments": ["coast"],
-    "trip_pace": "balanced",
-    "travel_party": "couple",
-    "party_adults": 2,
-    "party_children": 0,
-    "party_rooms": 1,
-    "departure_location": "Dhaka, Bangladesh",
-    "departure_country": "Bangladesh",
-    "travel_distance": "anywhere",
-    "travel_timing": "exact_dates",
-    "check_in_date": "2027-02-10",
-    "check_out_date": "2027-02-15",
-    "trip_nights": 5,
-    "budget_per_night": 300,
-    "currency": "USD"
-  }
-}
-```
-
-Store `data.paymentIntentId`, complete payment with Stripe using `data.clientSecret`, then poll:
-
-`GET /api/v1/history/by-payment/{paymentIntentId}`
-
-Use these states:
-
-| `data.payment.status` | `data.payment.analysisStatus` | Frontend action                                     |
-| --------------------- | ----------------------------- | --------------------------------------------------- |
-| `pending`             | `pending`                     | Continue waiting for payment                        |
-| `succeeded`           | `pending` or `processing`     | Show destination-generation progress and poll again |
-| `succeeded`           | `completed`                   | Read `data.history` and show the result             |
-| `succeeded`           | `failed`                      | Show `data.payment.analysisError` and retry option  |
-
-The Stripe webhook starts suggestion generation automatically. Do not call the suggestion endpoint again after successful payment unless the application is intentionally using the manual fallback flow.
-
-### Manual fallback
-
-`POST /api/v1/history/suggested-cities`
-
-```json
-{
-  "payment_intent_id": "pi_xxx",
-  "intake": { "...": "same validated intake" }
-}
-```
-
-Optional existing fields: `preferred_destinations` and `hope_of_this_trip`.
-
-## 4. Suggested destination UI
-
-Use the normalized `data.history` object, not the raw `data.aiResponse` object.
+Use `history.suggestedCities` and the exact `destinationId` when requesting a
+tour plan. Each guest-facing suggestion includes:
 
 ```ts
 interface SuggestedCity {
   destinationId: string;
   cityName: string;
   countryName: string;
-  worldRegion?: string;
   cityImage: string[];
-  latitude: number | null;
-  longitude: number | null;
-  numberOfDays: number;
   description: string;
+  primaryFeeling?: string;
   matchScore?: number;
   matchReasons: string[];
   tradeoffs: string[];
   unresolvedFacts: string[];
-  warnings: string[];
-  restrictionChecks: Record<string, unknown>[];
-  distanceCheck?: Record<string, unknown>;
-  verification?: Record<string, unknown>;
-  evidence?: Record<string, unknown>;
 }
 ```
 
-Render by `history.matchStatus`:
+Show the destination feeling as:
 
-- `matched`: display `history.suggestedCities` and use `city.destinationId` as the selection key.
-- `no_valid_result`: do not show an empty/error card. Display the guidance from `history.noValidResult` and any `history.clarifications`.
+```text
+Designed to help you feel: **{primaryFeeling}**
+```
 
-## 5. Generate a tour plan
+Render `tradeoffs` only. `warnings` is retained only for older clients and can
+duplicate the same text.
 
-`POST /api/v1/history/tour-plan`
+## 3. Generate and display an itinerary
+
+Create an itinerary with:
+
+```http
+POST /api/v1/history/tour-plan
+```
 
 ```json
 {
@@ -248,82 +70,201 @@ Render by `history.matchStatus`:
 }
 ```
 
-- `session_id` comes from `history.aiSessionId`.
-- `destination_id` must be the exact `destinationId` from the latest suggested list.
-- Remove `property_id` from the request and frontend state.
-
-Read the normalized result from `data.history`:
-
-- `feelingBlock`: emotional alignment content.
-- `budgetCheck`: budget status, estimate, room count, and note.
-- `stay`: includes price/availability status and estimate notes.
-- `tourPlan[].activities[]`: includes `placeId`, `businessStatus`, `availabilityNote`, address, cost, images, and distance.
-- `activitySessionId`: required for tour-plan regeneration.
-
-## 6. Regeneration
-
-### Regenerate destinations
-
-`POST /api/v1/history/regenerate-suggested-cities`
-
-```json
-{
-  "session_id": "suggestion-session-id",
-  "user_instruction": "Prefer somewhere closer to home.",
-  "intake_updates": {
-    "trip_pace": "mostly_open",
-    "budget_per_night": 350
-  }
-}
-```
-
-- `user_instruction` and `intake_updates` are optional, but at least one should normally be provided by the UI.
-- Send only changed intake fields in `intake_updates`.
-- Without `intake_updates`, new distinct destinations are appended to the existing list.
-- With `intake_updates`, the previous suggestions and selected itinerary are reset; replace the UI with the returned list.
-- Always replace the locally stored session ID with the returned `history.aiSessionId`, because the backend may recover an expired AI session.
-
-### Regenerate tour plan
-
-`POST /api/v1/history/regenerate-tour-plan`
-
-```json
-{
-  "activity_session_id": "activity-session-id",
-  "day_to_regenerate": 2,
-  "user_instruction": "Prefer a quieter afternoon."
-}
-```
-
-Omit `day_to_regenerate` to regenerate the complete itinerary. Replace the existing tour-plan state with the returned `data.history`, including the new `feelingBlock` and `budgetCheck` values.
-
-## 7. Validation and error handling
-
-Unknown request fields are rejected. Build payloads explicitly instead of spreading the full form or UI state into API requests.
+The normalized response is `data.history`. The most relevant guest-safe shape
+is:
 
 ```ts
-interface ApiError {
-  success: false;
-  statusCode: number;
-  message: string;
-  errorSources: Array<{
-    path: string | number;
-    message: string;
+interface HistoryItinerary {
+  activitySessionId: string;
+  feelingBlock?: {
+    headline: string;
+    primaryFeeling?: string;
+    explanation?: string;
+    markdown?: string;
+  };
+  bookingStatus?: {
+    readyToBook: false;
+    guestLabel: string;
+  };
+  stops: Array<{
+    stop: number;
+    baseArea: string;
+    nights: number;
+    firstDay: number;
+    lastDay: number;
+    stay?: Stay;
+  }>;
+  tourPlan: TourPlanDay[];
+  priceBreakdown?: PriceBreakdown;
+  guestNotes: string[];
+  validation?: { displayReady: boolean };
+}
+
+interface Stay {
+  name: string;
+  address: string;
+  rating?: number;
+  priceLevel?: string;
+  averageNightlyPrice?: number | string;
+  whySelected?: string;
+  photos: string[];
+  estimateNote?: string;
+}
+
+interface TourPlanDay {
+  day: number;
+  stop?: number;
+  dayType?: 'standard' | 'transfer';
+  activities: Array<{
+    itemType?: 'experience' | 'meal' | 'transfer' | 'free_time';
+    activityName: string;
+    activityTime: string;
+    activityDescription: string;
+    activityAddress: string;
+    activityImage: string[];
+    whySelected?: string;
+    travelMinutesFromPrevious?: number | null;
+    travelFrom?: string;
+    priceIndication?: string;
+    rating?: number | null;
+    openSlot?: boolean;
+    transferMinutes?: number | null;
+    transferBufferMinutes?: number | null;
+    includesFerry?: boolean;
+    viator?: {
+      product_code?: string;
+      title?: string;
+      booking_url?: string;
+      rating?: number;
+      review_count?: number;
+      from_price?: number;
+      currency?: string;
+    };
   }>;
 }
 ```
 
-Map `errorSources[].path` to form fields when possible and use `message` as the page-level fallback. A legacy `questions_answers` request returns `422` and must not be retried without converting it to `intake`.
+Render one section for each `stops[]` entry. The legacy top-level `stay` is
+only retained for older clients; prefer the stay belonging to each stop.
 
-## 8. Frontend completion checklist
+For each experience and planned restaurant, show `whySelected` and a travel
+line when `travelMinutesFromPrevious` is present. For `transfer` items, render
+a travel card; for `free_time` and `meal` items with `openSlot: true`, render a
+light open-time line.
 
-- [ ] Replace the old questionnaire model with `VelariIntake`.
-- [ ] Send `intake` when creating the payment intent.
-- [ ] Remove `questions_answers`, wellness-archetype transformation, and `property_id`.
-- [ ] Poll history after Stripe payment success.
-- [ ] Handle both suggestion match statuses.
-- [ ] Use `destinationId` for selection and `destination_id` for the tour-plan request.
-- [ ] Add partial `intake_updates` support to destination regeneration.
-- [ ] Render the new feeling, budget, stay, and activity verification fields.
-- [ ] Replace local session IDs with returned session IDs.
-- [ ] Display field-level errors from `errorSources`.
+Render `feelingBlock.markdown` as-is, or construct it from `primaryFeeling`
+and `explanation`. Do not display old “You chose” or “Why it fits” sections.
+
+`bookingStatus.readyToBook` remains false until live booking verification is
+available. Show `bookingStatus.guestLabel` once near pricing; never show a
+Book-now state while it is false.
+
+## 4. Pricing and Viator
+
+```ts
+interface PriceBreakdown {
+  currency?: string;
+  appliesTo?: string;
+  lines: Array<{
+    category: string;
+    label: string;
+    amount: number | null;
+    perPerson?: number | null;
+    basis: string;
+    details: string[];
+  }>;
+  total: number | null;
+  totalLabel?: string;
+  totalWithheldReason?: string | null;
+  whatMayVary?: string;
+}
+```
+
+Render every line, its label, amount, and basis. When `total` is `null`, show
+`totalWithheldReason` instead of a total. Do not use an older saved
+`totalCostEstimate` as a fallback.
+
+When an activity has `viator`, show its booking link and, when available:
+
+```text
+From $X per person · ★ rating (reviews) on Viator
+```
+
+All Viator activities are scheduled estimates, not confirmed bookings.
+
+## 5. Flexible date recommendations
+
+Call this after the guest chooses flexible timing or a month/season and enters
+`trip_nights`:
+
+```http
+POST /api/v1/history/recommend-travel-dates
+```
+
+Use the step 1-10 intake fields but omit `budget_per_night`,
+`check_in_date`, and `check_out_date`. `travel_timing` must be `flexible` or
+`month_season`; `exact_dates` is rejected. Optional `earliest_check_in` and
+`latest_check_out` must be sent together, and their range must fit
+`trip_nights`.
+
+```json
+{
+  "recent_feelings": ["stretched_thin"],
+  "trip_goals": ["reflection"],
+  "trip_prompt": "need_a_break",
+  "preferred_moments": ["quiet_privacy"],
+  "preferred_environments": ["mountains"],
+  "trip_pace": "one_highlight",
+  "travel_party": "solo",
+  "departure_location": "London",
+  "travel_distance": "anywhere",
+  "travel_timing": "month_season",
+  "travel_period": "may",
+  "trip_nights": 5,
+  "destination_id": "PT-AZO"
+}
+```
+
+The response exposes `recommended`, up to two `alternatives`, `summary`, and
+`availabilityNote`. Always display `availabilityNote` with the recommended
+dates. When the guest accepts dates, submit them to the destination-suggestion
+flow as `travel_timing: "exact_dates"` with `check_in_date` and
+`check_out_date`.
+
+## 6. Regeneration and saved history
+
+Regenerate an itinerary with:
+
+```http
+POST /api/v1/history/regenerate-tour-plan
+```
+
+```json
+{
+  "activity_session_id": "activity-session-id",
+  "user_instruction": "Prefer a quieter afternoon."
+}
+```
+
+Always replace local itinerary state with the returned `data.history`,
+including a possibly new `activitySessionId` and validation state.
+
+For Search History, fetch user-owned records using:
+
+```http
+GET /api/v1/history/my
+GET /api/v1/history/my/{historyId}
+```
+
+The eye icon must retain and use the Mongo `historyId`, not an upstream
+activity session ID. Show a loading state while history loads. On failure, show
+a retry action; API failures are server-logged.
+
+## 7. Error handling checklist
+
+- Build request payloads explicitly. Unknown fields are rejected.
+- Use the bearer access token on every authenticated request.
+- Read the API `message` and `errorSources[]` for errors.
+- Handle `matchStatus: "matched"` and `"no_valid_result"` separately.
+- Never render an itinerary when `validation.displayReady` is false.
+- Always show a retry option for failed history or date-recommendation loads.

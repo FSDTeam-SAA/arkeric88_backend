@@ -3,6 +3,7 @@ import { HttpException } from '@nestjs/common';
 import { HistoryService } from './history.service';
 import { PaymentStatus } from '../payment/entities/payment.entity';
 import { VelariIntakeDto } from './dto/velari-intake.dto';
+import { RecommendTravelDatesDto } from './dto/recommend-travel-dates.dto';
 
 const userId = '507f1f77bcf86cd799439011';
 
@@ -178,9 +179,106 @@ describe('HistoryService Velari suggestions', () => {
         { questions_answers: { old: true }, payment_intent_id: 'pi_test' },
         userId,
       ),
-    ).rejects.toMatchObject<HttpException>({ status: 422 });
+    ).rejects.toMatchObject<HttpException>({ status: 422 } as never);
     expect(paymentModel.findOne).not.toHaveBeenCalled();
     expect(aiClient.getSuggestedCities).not.toHaveBeenCalled();
+  });
+});
+
+describe('HistoryService travel-date recommendations', () => {
+  const dateRecommendationRequest: RecommendTravelDatesDto = {
+    recent_feelings: ['stretched_thin'],
+    trip_goals: ['reflection'],
+    trip_prompt: 'need_a_break',
+    preferred_moments: ['quiet_privacy'],
+    preferred_environments: ['mountains'],
+    trip_pace: 'one_highlight',
+    travel_party: 'solo',
+    activity_restrictions: [],
+    departure_location: 'London',
+    travel_distance: 'anywhere',
+    travel_timing: 'flexible',
+    trip_nights: 5,
+    earliest_check_in: '2027-05-01',
+    latest_check_out: '2027-05-15',
+  } as RecommendTravelDatesDto;
+
+  it('returns only guest-facing date recommendation fields', async () => {
+    const aiClient = {
+      recommendTravelDates: jest.fn().mockResolvedValue({
+        recommended: {
+          label: 'Best overall',
+          check_in: '2027-05-04',
+          check_out: '2027-05-09',
+          weekdays: ['Tuesday', 'Sunday'],
+          nights: 5,
+          reasons: ['Quieter midweek start'],
+          considerations: ['Availability is not live'],
+          basis: { weather: 0.9 },
+        },
+        alternatives: [
+          {
+            label: 'Best weather',
+            check_in: '2027-05-11',
+            check_out: '2027-05-16',
+            weekdays: ['Tuesday', 'Sunday'],
+            nights: 5,
+            reasons: ['Drier seasonal average'],
+            considerations: [],
+            factor_scores: { weather: 1 },
+          },
+        ],
+        summary: 'These dates balance a quieter pace with the season.',
+        availability_note: 'Availability and prices have not been checked.',
+        origin: { provider: 'internal' },
+      }),
+    };
+    const service = new HistoryService({} as never, {} as never, aiClient as never);
+
+    await expect(
+      service.recommendTravelDates(dateRecommendationRequest),
+    ).resolves.toEqual({
+      recommended: {
+        label: 'Best overall',
+        checkIn: '2027-05-04',
+        checkOut: '2027-05-09',
+        weekdays: ['Tuesday', 'Sunday'],
+        nights: 5,
+        reasons: ['Quieter midweek start'],
+        considerations: ['Availability is not live'],
+      },
+      alternatives: [
+        {
+          label: 'Best weather',
+          checkIn: '2027-05-11',
+          checkOut: '2027-05-16',
+          weekdays: ['Tuesday', 'Sunday'],
+          nights: 5,
+          reasons: ['Drier seasonal average'],
+          considerations: [],
+        },
+      ],
+      summary: 'These dates balance a quieter pace with the season.',
+      availabilityNote: 'Availability and prices have not been checked.',
+    });
+    expect(aiClient.recommendTravelDates).toHaveBeenCalledWith(
+      dateRecommendationRequest,
+    );
+  });
+
+  it('rejects a range shorter than trip_nights before calling the AI service', async () => {
+    const aiClient = { recommendTravelDates: jest.fn() };
+    const service = new HistoryService({} as never, {} as never, aiClient as never);
+
+    await expect(
+      service.recommendTravelDates({
+        ...dateRecommendationRequest,
+        latest_check_out: '2027-05-04',
+      }),
+    ).rejects.toThrow(
+      'The requested date range must be at least as long as trip_nights',
+    );
+    expect(aiClient.recommendTravelDates).not.toHaveBeenCalled();
   });
 });
 
@@ -251,7 +349,41 @@ function tourPlanResponse() {
   };
 }
 
-function setupTour(response = tourPlanResponse()) {
+function singleStopNewContractStructure() {
+  const response = tourPlanResponse();
+  const stay = {
+    ...response.stay,
+    why_selected: 'A central base for the itinerary.',
+  };
+
+  return {
+    stay,
+    stops: [
+      {
+        stop: 1,
+        base_area: 'Test City',
+        nights: 1,
+        first_day: 1,
+        last_day: 1,
+        stay,
+      },
+    ],
+    tour_plan: response.tour_plan.map((day) => ({
+      ...day,
+      stop: 1,
+      day_type: 'standard',
+      activities: day.activities.map((activity) => ({
+        ...activity,
+        item_type: 'experience',
+        why_selected: 'A close fit for this itinerary.',
+        travel_minutes_from_previous: 12,
+        travel_minutes_from_base: 12,
+      })),
+    })),
+  };
+}
+
+function setupTour(response: Record<string, unknown> = tourPlanResponse()) {
   const history = {
     _id: 'history-1',
     aiSessionId: 'session-1',
@@ -334,6 +466,355 @@ describe('HistoryService Velari tour plans', () => {
     );
   });
 
+  it('normalizes the new guest itinerary fields without requiring legacy fields', async () => {
+    const response = {
+      ...tourPlanResponse(),
+      feeling_block: {
+        headline: 'Designed to help you feel: Restored',
+        primary_feeling: 'Restored',
+        explanation: 'An unhurried harbour walk and a quiet spa afternoon.',
+        markdown: 'Designed to help you feel: **Restored**',
+        alignment: { status: 'aligned' },
+      },
+      stay: {
+        name: 'Harbour House',
+        address: '1 Coast Road',
+        photos: [],
+        facilities: [],
+        average_nightly_price: '$225 per night (estimate)',
+        why_selected: 'A central base close to every planned stop.',
+      },
+      stops: [
+        {
+          stop: 1,
+          base_area: 'Tofino',
+          nights: 3,
+          first_day: 1,
+          last_day: 3,
+          stay: {
+            name: 'Harbour House',
+            address: '1 Coast Road',
+            photos: [],
+            facilities: [],
+            why_selected: 'A central base close to every planned stop.',
+          },
+        },
+        {
+          stop: 2,
+          base_area: 'Ucluelet',
+          nights: 2,
+          first_day: 4,
+          last_day: 5,
+          stay: {
+            name: 'Ucluelet House',
+            address: '2 Coast Road',
+            photos: [],
+            facilities: [],
+            why_selected: 'A closer base for the second region.',
+          },
+        },
+      ],
+      tour_plan: [
+        {
+          day: 1,
+          stop: 1,
+          day_type: 'standard',
+          activities: [
+            {
+              item_type: 'experience',
+              activity_name: 'Harbour walk',
+              activity_description: 'Walk at an easy pace.',
+              activity_address: 'Harbour Road',
+              activity_image: [],
+              activity_time: '10:00 AM - 11:00 AM',
+              why_selected: 'A gentle start close to your hotel.',
+              travel_minutes_from_previous: 12,
+              travel_from: 'your hotel',
+              travel_minutes_from_base: 12,
+              activity_cost: 102.2,
+              price_source: 'viator_schedule',
+              availability_status: 'SCHEDULED',
+              viator: {
+                product_code: '123KAYAK',
+                title: 'Harbour Walk Tour',
+                booking_url: 'https://www.viator.com/tours/tofino/123KAYAK',
+                rating: 4.9,
+              },
+            },
+          ],
+        },
+        {
+          day: 4,
+          stop: 2,
+          day_type: 'transfer',
+          activities: [
+            {
+              item_type: 'transfer',
+              activity_name: 'Transfer to Ucluelet',
+              transfer_minutes: 80,
+              transfer_buffer_minutes: 30,
+              includes_ferry: false,
+            },
+          ],
+        },
+      ],
+      booking_status: {
+        ready_to_book: false,
+        guest_label: 'Prices and availability will be confirmed before booking',
+        reasons: ['Internal reason that must not be normalized for guests'],
+      },
+      price_breakdown: {
+        currency: 'USD',
+        lines: [
+          {
+            category: 'accommodation',
+            label: 'Accommodation',
+            amount: null,
+            basis: 'Nightly rate × nights',
+          },
+        ],
+        total: null,
+        total_withheld_reason: 'Taxes have not been confirmed.',
+      },
+      total_cost_estimate: null,
+      guest_notes: ['Confirm ferry sailing times before travel.'],
+      adjustments: [{ type: 'replaced', guest_note: 'A closer option was used.' }],
+      validation: {
+        status: 'passed_with_warnings',
+        display_ready: true,
+        max_leg_minutes: 60,
+        issues: [{ code: 'PRICING_INCOMPLETE' }],
+      },
+      budget_check: undefined,
+    };
+    const { service, historyModel } = setupTour(response);
+
+    await service.generateTourPlan(
+      { session_id: 'session-1', destination_id: 'PT-AZO' },
+      userId,
+    );
+
+    const update = historyModel.findByIdAndUpdate.mock.calls[0][1];
+    expect(update.$set).toEqual(
+      expect.objectContaining({
+        totalCostEstimate: null,
+        bookingStatus: {
+          readyToBook: false,
+          guestLabel:
+            'Prices and availability will be confirmed before booking',
+        },
+        priceBreakdown: expect.objectContaining({
+          total: null,
+          totalWithheldReason: 'Taxes have not been confirmed.',
+        }),
+        validation: expect.objectContaining({
+          displayReady: true,
+          maxLegMinutes: 60,
+        }),
+        guestNotes: ['Confirm ferry sailing times before travel.'],
+        stops: [
+          expect.objectContaining({ baseArea: 'Tofino', nights: 3 }),
+          expect.objectContaining({ baseArea: 'Ucluelet', nights: 2 }),
+        ],
+        feelingBlock: expect.objectContaining({
+          primaryFeeling: 'Restored',
+          explanation: 'An unhurried harbour walk and a quiet spa afternoon.',
+        }),
+      }),
+    );
+    expect(update.$set.tourPlan[0]).toEqual(
+      expect.objectContaining({ stop: 1, dayType: 'standard' }),
+    );
+    expect(update.$set.tourPlan[0].activities[0]).toEqual(
+      expect.objectContaining({
+        itemType: 'experience',
+        whySelected: 'A gentle start close to your hotel.',
+        travelMinutesFromPrevious: 12,
+        viator: expect.objectContaining({ product_code: '123KAYAK', rating: 4.9 }),
+      }),
+    );
+  });
+
+  it('stores a failed validation result without marking the itinerary completed', async () => {
+    const response = {
+      ...tourPlanResponse(),
+      ...singleStopNewContractStructure(),
+      booking_status: {
+        ready_to_book: false,
+        guest_label: 'Prices and availability will be confirmed before booking',
+      },
+      price_breakdown: {
+        lines: [
+          {
+            category: 'accommodation',
+            label: 'Accommodation',
+            amount: 1200,
+            basis: 'Nightly rate × nights',
+          },
+        ],
+        total: 1200,
+      },
+      total_cost_estimate: 1200,
+      validation: {
+        status: 'failed',
+        display_ready: false,
+        issues: [{ code: 'LEG_OVER_LIMIT' }],
+      },
+    };
+    const { service, historyModel } = setupTour(response);
+
+    await service.generateTourPlan(
+      { session_id: 'session-1', destination_id: 'PT-AZO' },
+      userId,
+    );
+
+    const update = historyModel.findByIdAndUpdate.mock.calls[0][1];
+    expect(update.$set.aiAnalysisStatus).toBe('failed');
+    expect(update.$set.recommendedJourney).toBeUndefined();
+    expect(update.$unset).toEqual(
+      expect.objectContaining({ recommendedJourney: 1 }),
+    );
+  });
+
+  it('rejects Viator experiences that claim confirmed booking availability', async () => {
+    const structure = singleStopNewContractStructure();
+    const response = {
+      ...tourPlanResponse(),
+      ...structure,
+      tour_plan: structure.tour_plan.map((day) => ({
+        ...day,
+        activities: day.activities.map((activity) => ({
+          ...activity,
+          viator: {
+            product_code: '123KAYAK',
+            title: 'Test experience',
+            booking_url: 'https://www.viator.com/tours/test/123KAYAK',
+          },
+          price_source: 'viator_schedule',
+          availability_status: 'CONFIRMED',
+        })),
+      })),
+      booking_status: {
+        ready_to_book: false,
+        guest_label: 'Prices and availability will be confirmed before booking',
+      },
+      price_breakdown: {
+        lines: [
+          {
+            category: 'accommodation',
+            label: 'Accommodation',
+            amount: 1200,
+            basis: 'Nightly rate × nights',
+          },
+        ],
+        total: 1200,
+      },
+      total_cost_estimate: 1200,
+      validation: {
+        status: 'passed',
+        display_ready: true,
+        issues: [],
+      },
+    };
+    const { service, historyModel } = setupTour(response);
+
+    await expect(
+      service.generateTourPlan(
+        { session_id: 'session-1', destination_id: 'PT-AZO' },
+        userId,
+      ),
+    ).rejects.toThrow(
+      'Viator experiences must be scheduled experiences with product, title, booking URL, and Viator price source',
+    );
+    expect(historyModel.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects an experience leg over the 60-minute limit', async () => {
+    const structure = singleStopNewContractStructure();
+    const response = {
+      ...tourPlanResponse(),
+      ...structure,
+      tour_plan: structure.tour_plan.map((day) => ({
+        ...day,
+        activities: day.activities.map((activity) => ({
+          ...activity,
+          travel_minutes_from_base: 61,
+        })),
+      })),
+      booking_status: {
+        ready_to_book: false,
+        guest_label: 'Prices and availability will be confirmed before booking',
+      },
+      price_breakdown: {
+        lines: [
+          {
+            category: 'accommodation',
+            label: 'Accommodation',
+            amount: 1200,
+            basis: 'Nightly rate × nights',
+          },
+        ],
+        total: 1200,
+      },
+      total_cost_estimate: 1200,
+      validation: {
+        status: 'passed',
+        display_ready: true,
+        issues: [],
+      },
+    };
+    const { service, historyModel } = setupTour(response);
+
+    await expect(
+      service.generateTourPlan(
+        { session_id: 'session-1', destination_id: 'PT-AZO' },
+        userId,
+      ),
+    ).rejects.toThrow(
+      'Every experience and planned meal must be within 60 minutes of both the base and previous stop',
+    );
+    expect(historyModel.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects a completed itinerary when price totals do not equal its line items', async () => {
+    const response = {
+      ...tourPlanResponse(),
+      ...singleStopNewContractStructure(),
+      booking_status: {
+        ready_to_book: false,
+        guest_label: 'Prices and availability will be confirmed before booking',
+      },
+      price_breakdown: {
+        lines: [
+          {
+            category: 'accommodation',
+            label: 'Accommodation',
+            amount: 1200,
+            basis: 'Nightly rate × nights',
+          },
+        ],
+        total: 1199,
+      },
+      total_cost_estimate: 1199,
+      validation: {
+        status: 'passed',
+        display_ready: true,
+        issues: [],
+      },
+    };
+    const { service, historyModel } = setupTour(response);
+
+    await expect(
+      service.generateTourPlan(
+        { session_id: 'session-1', destination_id: 'PT-AZO' },
+        userId,
+      ),
+    ).rejects.toThrow(
+      'price_breakdown.total and total_cost_estimate must exactly equal the sum of priced lines',
+    );
+    expect(historyModel.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
   it('rejects a destination that was not suggested in the session', async () => {
     const { service, aiClient } = setupTour();
 
@@ -342,7 +823,7 @@ describe('HistoryService Velari tour plans', () => {
         { session_id: 'session-1', destination_id: 'XX-NOT-SHOWN' },
         userId,
       ),
-    ).rejects.toMatchObject<HttpException>({ status: 400 });
+    ).rejects.toMatchObject<HttpException>({ status: 400 } as never);
     expect(aiClient.getTourPlan).not.toHaveBeenCalled();
   });
 
@@ -540,7 +1021,7 @@ describe('HistoryService suggestion regeneration', () => {
         },
         userId,
       ),
-    ).rejects.toMatchObject<HttpException>({ status: 422 });
+    ).rejects.toMatchObject<HttpException>({ status: 422 } as never);
     expect(aiClient.regenerateSuggestedCities).not.toHaveBeenCalled();
     expect(historyModel.findByIdAndUpdate).not.toHaveBeenCalled();
   });
