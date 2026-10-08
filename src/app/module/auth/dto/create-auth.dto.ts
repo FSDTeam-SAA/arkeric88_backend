@@ -1,5 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MinLength,
+} from 'class-validator';
 
 export class CreateAuthDto {
   @ApiProperty({ example: 'Saurav Sarkar' })
@@ -17,9 +23,10 @@ export class CreateAuthDto {
   password: string;
 
   @ApiPropertyOptional({ example: '01234567890' })
+  @IsOptional()
   @IsString()
   @MinLength(11, { message: 'Phone number must be at least 11 characters' })
-  phone: string;
+  phone?: string;
 }
 
 export class LoginAuthDto {

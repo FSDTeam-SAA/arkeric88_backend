@@ -45,6 +45,10 @@ import {
   isVelariIntake,
   VelariIntakeDto,
 } from './dto/velari-intake.dto';
+import {
+  HISTORY_SUMMARY_PROJECTION,
+  toHistorySummary,
+} from './history-summary';
 
 const historySearchableFields = [
   'aiAnalysisStatus',
@@ -929,13 +933,17 @@ export class HistoryService {
       this.historyModel.countDocuments(whereConditions),
       this.historyModel
         .find(whereConditions)
-        .populate('user', 'fullName email profilePicture role')
+        .select(HISTORY_SUMMARY_PROJECTION)
         .skip(skip)
         .limit(limit)
-        .sort({ [sortBy]: sortOrder } as never),
+        .sort({ [sortBy]: sortOrder } as never)
+        .lean(),
     ]);
 
-    return { meta: { page, limit, total }, data };
+    return {
+      meta: { page, limit, total },
+      data: data.map(toHistorySummary),
+    };
   }
 
   async getUserHistory(userId: string, options: IOptions) {
@@ -947,12 +955,17 @@ export class HistoryService {
       this.historyModel.countDocuments(query),
       this.historyModel
         .find(query)
+        .select(HISTORY_SUMMARY_PROJECTION)
         .skip(skip)
         .limit(limit)
-        .sort({ [sortBy]: sortOrder } as never),
+        .sort({ [sortBy]: sortOrder } as never)
+        .lean(),
     ]);
 
-    return { meta: { page, limit, total }, data };
+    return {
+      meta: { page, limit, total },
+      data: data.map(toHistorySummary),
+    };
   }
 
   async getSingleHistory(id: string): Promise<HistoryDocument> {
