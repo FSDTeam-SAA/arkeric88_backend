@@ -7,12 +7,6 @@ const emptyStringToUndefined = ({ value }: { value: unknown }) =>
 
 export class UpdateUserDto extends PartialType(CreateUserDto) {
   @Transform(emptyStringToUndefined)
-  firstName?: string;
-
-  @Transform(emptyStringToUndefined)
-  lastName?: string;
-
-  @Transform(emptyStringToUndefined)
   email?: string;
 
   @Transform(emptyStringToUndefined)
@@ -43,12 +37,6 @@ export class UpdateUserDto extends PartialType(CreateUserDto) {
 
   @Transform(emptyStringToUndefined)
   dateOfBirth?: Date;
-
-  @Transform(emptyStringToUndefined)
-  schoolAddress?: string;
-
-  @Transform(emptyStringToUndefined)
-  relationship?: string;
 
   @Transform(emptyStringToUndefined)
   otp?: string;
