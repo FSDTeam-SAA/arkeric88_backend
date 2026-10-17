@@ -233,7 +233,11 @@ describe('HistoryService travel-date recommendations', () => {
         origin: { provider: 'internal' },
       }),
     };
-    const service = new HistoryService({} as never, {} as never, aiClient as never);
+    const service = new HistoryService(
+      {} as never,
+      {} as never,
+      aiClient as never,
+    );
 
     await expect(
       service.recommendTravelDates(dateRecommendationRequest),
@@ -268,7 +272,11 @@ describe('HistoryService travel-date recommendations', () => {
 
   it('rejects a range shorter than trip_nights before calling the AI service', async () => {
     const aiClient = { recommendTravelDates: jest.fn() };
-    const service = new HistoryService({} as never, {} as never, aiClient as never);
+    const service = new HistoryService(
+      {} as never,
+      {} as never,
+      aiClient as never,
+    );
 
     await expect(
       service.recommendTravelDates({
@@ -578,7 +586,9 @@ describe('HistoryService Velari tour plans', () => {
       },
       total_cost_estimate: null,
       guest_notes: ['Confirm ferry sailing times before travel.'],
-      adjustments: [{ type: 'replaced', guest_note: 'A closer option was used.' }],
+      adjustments: [
+        { type: 'replaced', guest_note: 'A closer option was used.' },
+      ],
       validation: {
         status: 'passed_with_warnings',
         display_ready: true,
@@ -630,7 +640,10 @@ describe('HistoryService Velari tour plans', () => {
         itemType: 'experience',
         whySelected: 'A gentle start close to your hotel.',
         travelMinutesFromPrevious: 12,
-        viator: expect.objectContaining({ product_code: '123KAYAK', rating: 4.9 }),
+        viator: expect.objectContaining({
+          product_code: '123KAYAK',
+          rating: 4.9,
+        }),
       }),
     );
   });
@@ -676,7 +689,34 @@ describe('HistoryService Velari tour plans', () => {
     );
   });
 
-  it('rejects Viator experiences that claim confirmed booking availability', async () => {
+  it('passes through a minimal AI response when optional itinerary blocks are absent', async () => {
+    const response = {
+      activity_session_id: 'activity-1',
+      destination_id: 'PT-AZO',
+      future_contract_field: { enabled: true },
+    };
+    const { service, historyModel } = setupTour(response);
+
+    const result = await service.generateTourPlan(
+      { session_id: 'session-1', destination_id: 'PT-AZO' },
+      userId,
+    );
+
+    expect(result.aiResponse).toBe(response);
+    expect(historyModel.findByIdAndUpdate).toHaveBeenCalledWith(
+      'history-1',
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          tourPlanResponse: response,
+          aiAnalysisStatus: 'failed',
+        }),
+        $unset: expect.objectContaining({ recommendedJourney: 1 }),
+      }),
+      { new: true },
+    );
+  });
+
+  it('passes through AI responses with unverified Viator availability', async () => {
     const structure = singleStopNewContractStructure();
     const response = {
       ...tourPlanResponse(),
@@ -718,18 +758,21 @@ describe('HistoryService Velari tour plans', () => {
     };
     const { service, historyModel } = setupTour(response);
 
-    await expect(
-      service.generateTourPlan(
-        { session_id: 'session-1', destination_id: 'PT-AZO' },
-        userId,
-      ),
-    ).rejects.toThrow(
-      'Viator experiences must be scheduled experiences with product, title, booking URL, and Viator price source',
+    const result = await service.generateTourPlan(
+      { session_id: 'session-1', destination_id: 'PT-AZO' },
+      userId,
     );
-    expect(historyModel.findByIdAndUpdate).not.toHaveBeenCalled();
+    expect(result.aiResponse).toBe(response);
+    expect(historyModel.findByIdAndUpdate).toHaveBeenCalledWith(
+      'history-1',
+      expect.objectContaining({
+        $set: expect.objectContaining({ tourPlanResponse: response }),
+      }),
+      { new: true },
+    );
   });
 
-  it('rejects an experience leg over the 60-minute limit', async () => {
+  it('passes through AI responses with missing optional travel times', async () => {
     const structure = singleStopNewContractStructure();
     const response = {
       ...tourPlanResponse(),
@@ -738,7 +781,8 @@ describe('HistoryService Velari tour plans', () => {
         ...day,
         activities: day.activities.map((activity) => ({
           ...activity,
-          travel_minutes_from_base: 61,
+          travel_minutes_from_previous: null,
+          travel_minutes_from_base: null,
         })),
       })),
       booking_status: {
@@ -765,18 +809,15 @@ describe('HistoryService Velari tour plans', () => {
     };
     const { service, historyModel } = setupTour(response);
 
-    await expect(
-      service.generateTourPlan(
-        { session_id: 'session-1', destination_id: 'PT-AZO' },
-        userId,
-      ),
-    ).rejects.toThrow(
-      'Every experience and planned meal must be within 60 minutes of both the base and previous stop',
+    const result = await service.generateTourPlan(
+      { session_id: 'session-1', destination_id: 'PT-AZO' },
+      userId,
     );
-    expect(historyModel.findByIdAndUpdate).not.toHaveBeenCalled();
+    expect(result.aiResponse).toBe(response);
+    expect(historyModel.findByIdAndUpdate).toHaveBeenCalled();
   });
 
-  it('rejects a completed itinerary when price totals do not equal its line items', async () => {
+  it('passes through AI responses when optional price totals do not reconcile', async () => {
     const response = {
       ...tourPlanResponse(),
       ...singleStopNewContractStructure(),
@@ -804,15 +845,12 @@ describe('HistoryService Velari tour plans', () => {
     };
     const { service, historyModel } = setupTour(response);
 
-    await expect(
-      service.generateTourPlan(
-        { session_id: 'session-1', destination_id: 'PT-AZO' },
-        userId,
-      ),
-    ).rejects.toThrow(
-      'price_breakdown.total and total_cost_estimate must exactly equal the sum of priced lines',
+    const result = await service.generateTourPlan(
+      { session_id: 'session-1', destination_id: 'PT-AZO' },
+      userId,
     );
-    expect(historyModel.findByIdAndUpdate).not.toHaveBeenCalled();
+    expect(result.aiResponse).toBe(response);
+    expect(historyModel.findByIdAndUpdate).toHaveBeenCalled();
   });
 
   it('rejects a destination that was not suggested in the session', async () => {
