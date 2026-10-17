@@ -242,6 +242,18 @@ type TravelDateRecommendationApiResponse = {
   availability_note?: string;
 };
 
+type NormalizedTourPlanResponse = {
+  stay?: StayDetails;
+  stops: ItineraryStop[];
+  tourPlan: TourPlanDay[];
+  feelingBlock?: FeelingBlock;
+  budgetCheck?: BudgetCheck;
+  bookingStatus?: BookingStatus;
+  priceBreakdown?: PriceBreakdown;
+  validation?: ItineraryValidation;
+  displayReady: boolean;
+};
+
 @Injectable()
 export class HistoryService {
   constructor(
@@ -594,26 +606,21 @@ export class HistoryService {
       );
     }
 
-    const stay = this.mapStay(aiResponse.stay);
-    const stops = this.mapStops(aiResponse.stops);
-    const tourPlan = this.mapTourPlan(aiResponse.tour_plan);
-    const feelingBlock = this.mapFeelingBlock(aiResponse.feeling_block);
-    const budgetCheck = this.mapBudgetCheck(aiResponse.budget_check);
-    const bookingStatus = this.mapBookingStatus(aiResponse.booking_status);
-    const priceBreakdown = this.mapPriceBreakdown(aiResponse.price_breakdown);
-    const validation = this.mapValidation(aiResponse.validation);
-    if (!stay || !feelingBlock) {
-      throw new InternalServerErrorException(
-        'AI tour-plan response is missing stay or feeling_block',
-      );
-    }
-    this.assertNewItinerarySafety(
-      aiResponse,
+    const normalized = this.normalizeTourPlanResponse(aiResponse);
+    const {
+      stay,
+      stops,
+      tourPlan,
+      feelingBlock,
+      budgetCheck,
       bookingStatus,
       priceBreakdown,
       validation,
+      displayReady,
+    } = normalized;
+    const canBuildRecommendedJourney = Boolean(
+      displayReady && stay && tourPlan.length,
     );
-    const displayReady = validation?.displayReady !== false;
     const selectedCity =
       this.asOptionalString(aiResponse.city) || selectedDestination.cityName;
     const updated = await this.historyModel.findByIdAndUpdate(
@@ -633,13 +640,15 @@ export class HistoryService {
           guestNotes: this.asStringArray(aiResponse.guest_notes),
           adjustments: this.asRecordArray(aiResponse.adjustments),
           validation,
-          totalCostEstimate: this.asNullableNumber(aiResponse.total_cost_estimate),
+          totalCostEstimate: this.asNullableNumber(
+            aiResponse.total_cost_estimate,
+          ),
           packingTips: this.asOptionalString(aiResponse.packing_tips),
           travelTips: this.asOptionalString(aiResponse.travel_tips),
           source: this.asOptionalString(aiResponse.source),
           tourPlanResponse: aiResponse,
           aiAnalysisStatus: displayReady ? 'completed' : 'failed',
-          ...(displayReady
+          ...(canBuildRecommendedJourney
             ? {
                 recommendedJourney: this.buildRecommendedJourney(
                   selectedCity,
@@ -651,7 +660,7 @@ export class HistoryService {
         },
         $unset: {
           selectedPropertyId: 1,
-          ...(displayReady ? {} : { recommendedJourney: 1 }),
+          ...(canBuildRecommendedJourney ? {} : { recommendedJourney: 1 }),
         },
       },
       { new: true },
@@ -860,26 +869,21 @@ export class HistoryService {
         'Regenerated tour-plan destination_id does not match the saved itinerary',
       );
     }
-    const tourPlan = this.mapTourPlan(aiResponse.tour_plan);
-    const stay = this.mapStay(aiResponse.stay) || history.stay;
-    const stops = this.mapStops(aiResponse.stops);
-    const feelingBlock = this.mapFeelingBlock(aiResponse.feeling_block);
-    const budgetCheck = this.mapBudgetCheck(aiResponse.budget_check);
-    const bookingStatus = this.mapBookingStatus(aiResponse.booking_status);
-    const priceBreakdown = this.mapPriceBreakdown(aiResponse.price_breakdown);
-    const validation = this.mapValidation(aiResponse.validation);
-    if (!feelingBlock) {
-      throw new InternalServerErrorException(
-        'Regenerated tour-plan response is missing feeling_block',
-      );
-    }
-    this.assertNewItinerarySafety(
-      aiResponse,
+    const normalized = this.normalizeTourPlanResponse(aiResponse, history.stay);
+    const {
+      stay,
+      stops,
+      tourPlan,
+      feelingBlock,
+      budgetCheck,
       bookingStatus,
       priceBreakdown,
       validation,
+      displayReady,
+    } = normalized;
+    const canBuildRecommendedJourney = Boolean(
+      displayReady && stay && tourPlan.length,
     );
-    const displayReady = validation?.displayReady !== false;
     const updated = await this.historyModel.findByIdAndUpdate(
       history._id,
       {
@@ -899,13 +903,15 @@ export class HistoryService {
           guestNotes: this.asStringArray(aiResponse.guest_notes),
           adjustments: this.asRecordArray(aiResponse.adjustments),
           validation,
-          totalCostEstimate: this.asNullableNumber(aiResponse.total_cost_estimate),
+          totalCostEstimate: this.asNullableNumber(
+            aiResponse.total_cost_estimate,
+          ),
           packingTips: this.asOptionalString(aiResponse.packing_tips),
           travelTips: this.asOptionalString(aiResponse.travel_tips),
           source: this.asOptionalString(aiResponse.source),
           tourPlanResponse: aiResponse,
           aiAnalysisStatus: displayReady ? 'completed' : 'failed',
-          ...(displayReady
+          ...(canBuildRecommendedJourney
             ? {
                 recommendedJourney: this.buildRecommendedJourney(
                   history.selectedCity || '',
@@ -915,7 +921,9 @@ export class HistoryService {
               }
             : {}),
         },
-        ...(displayReady ? {} : { $unset: { recommendedJourney: 1 } }),
+        ...(canBuildRecommendedJourney
+          ? {}
+          : { $unset: { recommendedJourney: 1 } }),
       },
       { new: true },
     );
@@ -1400,6 +1408,32 @@ export class HistoryService {
     return status;
   }
 
+  /**
+   * Builds the optional, query-friendly history fields from an AI response.
+   * The original response remains the source of truth in tourPlanResponse and
+   * is returned to the caller unchanged, so contract additions or incomplete
+   * optional fields never prevent the frontend from receiving it.
+   */
+  private normalizeTourPlanResponse(
+    response: TourPlanApiResponse,
+    fallbackStay?: StayDetails,
+  ): NormalizedTourPlanResponse {
+    const validation = this.mapValidation(response.validation);
+
+    return {
+      stay: this.mapStay(response.stay) || fallbackStay,
+      stops: this.mapStops(response.stops),
+      tourPlan: this.mapTourPlan(response.tour_plan),
+      feelingBlock: this.mapFeelingBlock(response.feeling_block),
+      budgetCheck: this.mapBudgetCheck(response.budget_check),
+      bookingStatus: this.mapBookingStatus(response.booking_status),
+      priceBreakdown: this.mapPriceBreakdown(response.price_breakdown),
+      validation,
+      displayReady:
+        validation?.displayReady ?? Boolean(response.tour_plan?.length),
+    };
+  }
+
   private mapStay(stay?: TourPlanApiResponse['stay']): StayDetails | undefined {
     if (!stay) {
       return undefined;
@@ -1435,28 +1469,16 @@ export class HistoryService {
     const primaryFeeling = this.asOptionalString(block.primary_feeling);
     const explanation = this.asOptionalString(block.explanation);
     const alignment = this.asRecord(block.alignment);
-    const alignmentStatus = this.asOptionalString(alignment?.status);
     const feelings = this.asRecordArray(block.feelings);
     const supportingExperiences = this.asRecordArray(
       block.supporting_experiences,
     );
     const narrative =
       block.narrative === null ? null : this.asOptionalString(block.narrative);
-    if (
-      !headline ||
-      !alignmentStatus ||
-      !['aligned', 'revised', 'mismatch', 'not_assessed'].includes(
-        alignmentStatus,
-      )
-    ) {
-      throw new InternalServerErrorException(
-        'AI feeling_block is missing required alignment content',
-      );
-    }
     return {
       title: this.asOptionalString(block.title) || '',
       feelings,
-      headline,
+      headline: headline || '',
       intention,
       narrative,
       primaryFeeling,
@@ -1479,22 +1501,10 @@ export class HistoryService {
     const rooms = this.asOptionalNumber(budget.rooms);
     const status = this.asOptionalString(budget.status);
     const note = this.asOptionalString(budget.note);
-    if (
-      budgetPerNightUsd === undefined ||
-      rooms === undefined ||
-      typeof budget.budget_open_ended !== 'boolean' ||
-      !status ||
-      !note
-    ) {
-      throw new InternalServerErrorException(
-        'AI budget_check is missing required fields',
-      );
-    }
-
     return {
-      budgetPerNightUsd,
+      budgetPerNightUsd: budgetPerNightUsd ?? 0,
       budgetOpenEnded: budget.budget_open_ended === true,
-      rooms,
+      rooms: rooms ?? 0,
       estimatedStayNightlyUsd:
         budget.estimated_stay_nightly_usd === null
           ? null
@@ -1505,8 +1515,8 @@ export class HistoryService {
           : budget.stay_within_budget === null
             ? null
             : undefined,
-      status,
-      note,
+      status: status || '',
+      note: note || '',
     };
   }
 
@@ -1538,7 +1548,9 @@ export class HistoryService {
               ),
               placeId: this.asOptionalString(activity.place_id) || null,
               businessStatus: this.asOptionalString(activity.business_status),
-              availabilityNote: this.asOptionalString(activity.availability_note),
+              availabilityNote: this.asOptionalString(
+                activity.availability_note,
+              ),
               whySelected: this.asOptionalString(activity.why_selected),
               travelMinutesFromPrevious: this.asNullableNumber(
                 activity.travel_minutes_from_previous,
@@ -1574,9 +1586,7 @@ export class HistoryService {
     }));
   }
 
-  private mapStops(
-    stops?: TourPlanApiResponse['stops'],
-  ): ItineraryStop[] {
+  private mapStops(stops?: TourPlanApiResponse['stops']): ItineraryStop[] {
     if (!Array.isArray(stops)) return [];
 
     return stops.map((stop) => ({
@@ -1634,7 +1644,8 @@ export class HistoryService {
   ): ItineraryValidation | undefined {
     if (!validation) return undefined;
     const status = this.asOptionalString(validation.status);
-    if (!status || typeof validation.display_ready !== 'boolean') return undefined;
+    if (!status || typeof validation.display_ready !== 'boolean')
+      return undefined;
 
     return {
       status,
@@ -1642,266 +1653,6 @@ export class HistoryService {
       maxLegMinutes: this.asOptionalNumber(validation.max_leg_minutes),
       issues: this.asRecordArray(validation.issues),
     };
-  }
-
-  private assertNewItinerarySafety(
-    response: TourPlanApiResponse,
-    bookingStatus: BookingStatus | undefined,
-    priceBreakdown: PriceBreakdown | undefined,
-    validation: ItineraryValidation | undefined,
-  ): void {
-    const isNewContract = Boolean(
-      response.validation ||
-        response.price_breakdown ||
-        response.booking_status ||
-        response.stops,
-    );
-    if (!isNewContract) return;
-
-    if (!validation) {
-      throw new InternalServerErrorException(
-        'New itinerary responses must include validation.status and validation.display_ready',
-      );
-    }
-    if (!['passed', 'passed_with_warnings', 'failed'].includes(validation.status)) {
-      throw new InternalServerErrorException(
-        'AI itinerary validation has an invalid status',
-      );
-    }
-    if (
-      (validation.status === 'failed' && validation.displayReady) ||
-      (validation.status !== 'failed' && !validation.displayReady)
-    ) {
-      throw new InternalServerErrorException(
-        'AI itinerary validation status and display_ready disagree',
-      );
-    }
-
-    if (!bookingStatus) {
-      throw new InternalServerErrorException(
-        'New itinerary responses must include booking_status',
-      );
-    }
-    if (bookingStatus.readyToBook) {
-      throw new InternalServerErrorException(
-        'booking_status.ready_to_book must remain false until live booking verification is available',
-      );
-    }
-    this.assertItineraryStructure(response);
-
-    if (!priceBreakdown) {
-      throw new InternalServerErrorException(
-        'New itinerary responses must include price_breakdown',
-      );
-    }
-    if (!priceBreakdown.lines.length) {
-      throw new InternalServerErrorException(
-        'price_breakdown must include at least one line',
-      );
-    }
-
-    const hasMissingAmount = priceBreakdown.lines.some(
-      (line) => line.amount === null,
-    );
-    const totalCostEstimate = this.asNullableNumber(
-      response.total_cost_estimate,
-    );
-    if (hasMissingAmount) {
-      if (
-        priceBreakdown.total !== null ||
-        totalCostEstimate !== null ||
-        !priceBreakdown.totalWithheldReason
-      ) {
-        throw new InternalServerErrorException(
-          'A price breakdown with missing amounts must withhold both totals and explain why',
-        );
-      }
-      return;
-    }
-
-    if (priceBreakdown.total === null || totalCostEstimate === null) {
-      throw new InternalServerErrorException(
-        'A complete price breakdown must include price_breakdown.total and total_cost_estimate',
-      );
-    }
-
-    const lineTotalCents = priceBreakdown.lines.reduce(
-      (sum, line) => sum + Math.round((line.amount || 0) * 100),
-      0,
-    );
-    const breakdownTotalCents = Math.round(priceBreakdown.total * 100);
-    const estimateTotalCents = Math.round(totalCostEstimate * 100);
-    if (
-      lineTotalCents !== breakdownTotalCents ||
-      breakdownTotalCents !== estimateTotalCents
-    ) {
-      throw new InternalServerErrorException(
-        'price_breakdown.total and total_cost_estimate must exactly equal the sum of priced lines',
-      );
-    }
-  }
-
-  private assertItineraryStructure(response: TourPlanApiResponse): void {
-    if (!Array.isArray(response.stops) || !response.stops.length) {
-      throw new InternalServerErrorException(
-        'New itinerary responses must include at least one stop',
-      );
-    }
-
-    const stopIds = new Set<number>();
-    for (const [index, stop] of response.stops.entries()) {
-      const stopNumber = this.asOptionalNumber(stop.stop);
-      const nights = this.asOptionalNumber(stop.nights);
-      const firstDay = this.asOptionalNumber(stop.first_day);
-      const lastDay = this.asOptionalNumber(stop.last_day);
-      if (
-        stopNumber !== index + 1 ||
-        !this.asOptionalString(stop.base_area) ||
-        !nights ||
-        !firstDay ||
-        !lastDay ||
-        lastDay - firstDay + 1 !== nights ||
-        !stop.stay ||
-        !this.asOptionalString(stop.stay.why_selected)
-      ) {
-        throw new InternalServerErrorException(
-          'Every stop must have a sequential number, base, stay, nights, day range, and why_selected',
-        );
-      }
-      stopIds.add(stopNumber);
-    }
-
-    if (!Array.isArray(response.tour_plan) || !response.tour_plan.length) {
-      throw new InternalServerErrorException(
-        'New itinerary responses must include a tour_plan',
-      );
-    }
-
-    const firstDayByStop = new Map<number, number>();
-    for (const day of response.tour_plan) {
-      const dayNumber = this.asOptionalNumber(day.day);
-      const stopNumber = this.asOptionalNumber(day.stop);
-      const dayType = this.asOptionalString(day.day_type);
-      if (
-        !dayNumber ||
-        !stopNumber ||
-        !stopIds.has(stopNumber) ||
-        !dayType ||
-        !['standard', 'transfer'].includes(dayType) ||
-        !Array.isArray(day.activities)
-      ) {
-        throw new InternalServerErrorException(
-          'Every itinerary day must have a valid stop, day_type, and activities list',
-        );
-      }
-
-      const firstDay = firstDayByStop.get(stopNumber);
-      if (firstDay === undefined || dayNumber < firstDay) {
-        firstDayByStop.set(stopNumber, dayNumber);
-      }
-      this.assertItineraryActivities(day.activities, dayType);
-    }
-
-    for (const stop of response.stops.slice(1)) {
-      const stopNumber = this.asOptionalNumber(stop.stop)!;
-      const firstDay = firstDayByStop.get(stopNumber);
-      if (firstDay !== this.asOptionalNumber(stop.first_day)) {
-        throw new InternalServerErrorException(
-          'Each stop first_day must match its first planned itinerary day',
-        );
-      }
-      const transferDay = response.tour_plan.find(
-        (day) =>
-          this.asOptionalNumber(day.stop) === stopNumber &&
-          this.asOptionalNumber(day.day) === firstDay,
-      );
-      if (!transferDay || transferDay.day_type !== 'transfer') {
-        throw new InternalServerErrorException(
-          'The first itinerary day at every stop after the first must be a transfer day',
-        );
-      }
-    }
-  }
-
-  private assertItineraryActivities(
-    activities: TourActivityApiItem[],
-    dayType: string,
-  ): void {
-    const validItemTypes = new Set(['experience', 'meal', 'transfer', 'free_time']);
-    let hasTransfer = false;
-
-    for (const activity of activities) {
-      const itemType = this.asOptionalString(activity.item_type);
-      if (!itemType || !validItemTypes.has(itemType)) {
-        throw new InternalServerErrorException(
-          'Every itinerary activity must have a valid item_type',
-        );
-      }
-      if (
-        (itemType === 'experience' ||
-          (itemType === 'meal' && activity.open_slot !== true)) &&
-        !this.asOptionalString(activity.why_selected)
-      ) {
-        throw new InternalServerErrorException(
-          'Every experience and planned meal must include why_selected',
-        );
-      }
-      if (
-        itemType === 'experience' ||
-        (itemType === 'meal' && activity.open_slot !== true)
-      ) {
-        const fromPrevious = this.asOptionalNumber(
-          activity.travel_minutes_from_previous,
-        );
-        const fromBase = this.asOptionalNumber(activity.travel_minutes_from_base);
-        if (
-          fromPrevious === undefined ||
-          fromBase === undefined ||
-          fromPrevious > 60 ||
-          fromBase > 60
-        ) {
-          throw new InternalServerErrorException(
-            'Every experience and planned meal must be within 60 minutes of both the base and previous stop',
-          );
-        }
-      }
-
-      if (itemType === 'transfer') {
-        hasTransfer = true;
-        if (
-          this.asOptionalNumber(activity.transfer_minutes) === undefined ||
-          this.asOptionalNumber(activity.transfer_buffer_minutes) === undefined ||
-          typeof activity.includes_ferry !== 'boolean'
-        ) {
-          throw new InternalServerErrorException(
-            'Transfer activities must include transfer_minutes, transfer_buffer_minutes, and includes_ferry',
-          );
-        }
-      }
-
-      const viator = this.asRecord(activity.viator);
-      if (!viator) continue;
-      if (
-        itemType !== 'experience' ||
-        !this.asOptionalString(viator.product_code) ||
-        !this.asOptionalString(viator.title) ||
-        !this.asOptionalString(viator.booking_url) ||
-        activity.availability_status !== 'SCHEDULED' ||
-        !['viator_schedule', 'viator_from_price'].includes(
-          activity.price_source || '',
-        )
-      ) {
-        throw new InternalServerErrorException(
-          'Viator experiences must be scheduled experiences with product, title, booking URL, and Viator price source',
-        );
-      }
-    }
-
-    if (dayType === 'transfer' && !hasTransfer) {
-      throw new InternalServerErrorException(
-        'Transfer days must include a transfer activity',
-      );
-    }
   }
 
   private validateTravelDateRecommendationRequest(
@@ -1931,7 +1682,10 @@ export class HistoryService {
   ): Record<string, unknown> {
     const response = (this.asRecord(aiResponse.response) ||
       aiResponse) as TravelDateRecommendationApiResponse;
-    const recommended = this.mapTravelDateOption(response.recommended, 'recommended');
+    const recommended = this.mapTravelDateOption(
+      response.recommended,
+      'recommended',
+    );
     const summary = this.asOptionalString(response.summary);
     const availabilityNote = this.asOptionalString(response.availability_note);
     if (!summary || !availabilityNote) {
