@@ -17,12 +17,18 @@ export class AuthService {
     private readonly jwtService: jwt.JwtService,
   ) {}
 
-  async register(CreateAuthDto: CreateAuthDto) {
-    const user = await this.userModel.findOne({ email: CreateAuthDto.email });
+  async register(createAuthDto: CreateAuthDto) {
+    const user = await this.userModel.findOne({ email: createAuthDto.email });
     if (user) {
       throw new HttpException('User already exists', 400);
     }
-    const newUser = await this.userModel.create(CreateAuthDto);
+
+    const { phone, ...registrationData } = createAuthDto;
+    const newUser = await this.userModel.create({
+      ...registrationData,
+      phoneNumber: phone,
+    });
+
     return newUser;
   }
 
