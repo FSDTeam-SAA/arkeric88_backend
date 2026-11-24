@@ -6,12 +6,12 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build": "nest build",
+    "build": "node init && nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "start": "nest start",
-    "start:dev": "nest start --watch",
-    "start:debug": "nest start --debug --watch",
-    "start:prod": "node dist/main.js",
+    "start": "node init && nest start",
+    "start:dev": "node init && nest start --watch",
+    "start:debug": "node init && nest start --debug --watch",
+    "start:prod": "node init && node dist/main.js",
     "lint": "eslint \"{src,test}/**/*.ts\"",
     "lint:fix": "eslint \"{src,test}/**/*.ts\" --fix",
     "test": "jest --runInBand",
@@ -52,7 +52,7 @@
     "swagger-ui-express": "^5.0.1",
     "twilio": "^5.13.1",
     "typeorm": "^1.0.0",
-    "ws": "^8.20.0",
+    "ws": "^8.23.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
