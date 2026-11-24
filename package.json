@@ -23,7 +23,7 @@
   "dependencies": {
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.3",
-    "@nestjs/core": "^11.0.1",
+    "@nestjs/core": "^11.2.11",
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/mapped-types": "*",
     "@nestjs/mongoose": "^11.0.4",
